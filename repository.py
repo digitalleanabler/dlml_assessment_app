@@ -1,3 +1,5 @@
+# Author: Tanakorn
+
 """Google Sheets persistence, with a developer-only in-memory fallback."""
 
 from __future__ import annotations
