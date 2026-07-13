@@ -14,14 +14,31 @@ st.set_page_config(page_title="DLML Collaborative Assessment", page_icon="📝",
 
 @st.cache_resource
 def get_repository() -> tuple[Any, bool]:
+    print("Loading repository...")
     """Use the live Sheet when production secrets exist; otherwise allow local testing."""
     try:
-        service_account = dict(st.secrets["gcp_service_account"])
-        sheet_id = str(st.secrets.get("spreadsheet_id", os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "")))
+        service_account_obj = st.secrets.get("gcp_service_account", {})
+        service_account = dict(service_account_obj)
+        print("service_account_keys", sorted(service_account.keys()))
+
+        sheet_id = str(st.secrets.get("spreadsheet_id", "") or "")
+        if not sheet_id:
+            general_section = st.secrets.get("general", None)
+            if general_section is not None and hasattr(general_section, "get"):
+                sheet_id = str(general_section.get("spreadsheet_id", "") or "")
+
+        sheet_id = sheet_id.strip()
+        print("sheet_id_present", bool(sheet_id))
+        print("service_account_present", bool(service_account))
         if service_account and sheet_id:
+            print(f"Using Google Sheets repository with sheet_id={sheet_id}")
             return GoogleSheetsRepository.from_service_account(service_account, sheet_id), False
-    except (KeyError, FileNotFoundError):
-        pass
+
+        print("Google Sheets secrets missing or incomplete; falling back to in-memory repository")
+    except Exception as e:
+        st.error(f"Secret loading failed: {e}")
+        print(f"Secret loading failed: {e}")
+
     return InMemoryRepository(), True
 
 
