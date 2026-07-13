@@ -67,6 +67,14 @@ def clear_answer_widgets() -> None:
     for key in list(st.session_state):
         if key.startswith("answer_"):
             del st.session_state[key]
+    st.session_state.pop("responses_cache", None)
+
+
+def get_cached_responses(repo: Any, company_id: str, session_state: dict[str, Any]) -> dict[str, str]:
+    cache_key = "responses_cache"
+    if cache_key not in session_state:
+        session_state[cache_key] = dict(repo.responses_for(company_id))
+    return dict(session_state[cache_key])
 
 
 def main() -> None:
@@ -76,6 +84,8 @@ def main() -> None:
         st.warning("Developer demo mode: using in-memory seed data. Configure Google Sheets secrets for shared persistence.")
 
     if st.session_state.identity is None:
+        if hasattr(repo, "load_login_data"):
+            repo.load_login_data(force=True)
         st.title("DLML Collaborative Assessment")
         st.caption("Sign in to work on your company’s shared assessment.")
         with st.form("sign_in"):
@@ -85,10 +95,7 @@ def main() -> None:
         if submitted:
             cleaned_company_name = company_name.strip()
             cleaned_email = email.strip().lower()
-            company = next(
-                (row for row in repo.rows("Companies") if row["CompanyName"].strip().casefold() == cleaned_company_name.casefold()),
-                None,
-            )
+            company = repo.company_by_name(cleaned_company_name) if hasattr(repo, "company_by_name") else None
             user = repo.user(cleaned_email, company["CompanyID"]) if company else None
             if not cleaned_company_name or not cleaned_email:
                 st.warning("Enter both your company name and Google email address.")
@@ -102,30 +109,39 @@ def main() -> None:
         return
 
     identity = st.session_state.identity
+    if hasattr(repo, "load_login_data"):
+        repo.load_login_data(force=True)
     company = repo.company(identity["CompanyID"])
     assert company
     readonly = company["Status"] == "Submitted"
     st.title("DLML Collaborative Assessment")
     st.caption(f"{identity['CompanyName']} · Signed in as {identity['Name']} ({identity['Email']})")
     if st.button("Reload shared survey"):
+        repo.clear_cache()
+        st.session_state["responses_cache"] = dict(repo.responses_for(identity["CompanyID"]))
         st.rerun()
     if readonly:
         st.success(f"Submitted by {company['SubmittedBy']} on {company['SubmittedTime']}. This survey is read-only.")
 
-    questions = sorted(repo.rows("Questions"), key=lambda row: int(row["Sequence"]))
-    all_conditions = repo.rows("QuestionConditions")
-    all_options = repo.rows("QuestionOptions")
-    responses = repo.responses_for(identity["CompanyID"])
+    design_data = repo.design_data()
+    questions = sorted(design_data["Questions"], key=lambda row: int(row["Sequence"]))
+    responses = get_cached_responses(repo, identity["CompanyID"], st.session_state)
 
     draft_responses = dict(responses)
     visible_questions: list[dict[str, str]] = []
     for question in questions:
-        conditions = [row for row in all_conditions if row["QuestionID"] == question["QuestionID"]]
+        question_id = question["QuestionID"]
+        conditions = design_data["ConditionsByQuestion"].get(question_id, [])
         if not is_question_visible(question, conditions, draft_responses):
             continue
         visible_questions.append(question)
-        options = sorted([row for row in all_options if row["QuestionID"] == question["QuestionID"]], key=lambda row: int(row.get("DisplayOrder", 0) or 0))
-        draft_responses[question["QuestionID"]] = value_input(question, options, responses.get(question["QuestionID"], ""), readonly)
+        options = sorted(
+            design_data["OptionsByQuestion"].get(question_id, []),
+            key=lambda row: int(row.get("DisplayOrder", 0) or 0),
+        )
+        draft_responses[question_id] = value_input(question, options, responses.get(question_id, ""), readonly)
+
+    st.session_state["responses_cache"] = dict(draft_responses)
 
     if not readonly:
         st.divider()
@@ -175,6 +191,7 @@ def main() -> None:
                 for question in visible_questions
             )
             if saved_count:
+                st.session_state["responses_cache"] = dict(draft_responses)
                 st.success(f"Saved {saved_count} response{'s' if saved_count != 1 else ''}. You can continue editing.")
             else:
                 st.info("There are no changed responses to save.")
@@ -185,6 +202,7 @@ def main() -> None:
             else:
                 for question in visible_questions:
                     repo.save_response(identity["CompanyID"], question["QuestionID"], draft_responses.get(question["QuestionID"], ""), identity["Email"])
+                st.session_state["responses_cache"] = dict(draft_responses)
                 repo.submit(identity["CompanyID"], identity["Email"])
                 st.rerun()
 

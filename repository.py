@@ -10,6 +10,7 @@ from typing import Any
 
 
 SHEETS = ("Companies", "Users", "Questions", "QuestionOptions", "QuestionConditions", "Responses", "ResponseHistory")
+STATIC_TABLES = {"Questions", "QuestionOptions", "QuestionConditions"}
 
 
 def now() -> str:
@@ -51,15 +52,60 @@ class InMemoryRepository:
 
     def __init__(self) -> None:
         self.tables = deepcopy(SEED)
+        self._static_cache: dict[str, list[dict[str, str]]] = {}
+        self._design_cache: dict[str, Any] | None = None
+        self._login_cache: dict[str, list[dict[str, str]]] = {}
+        self._history_counter = 0
 
     def rows(self, worksheet: str) -> list[dict[str, str]]:
+        if worksheet in STATIC_TABLES:
+            if worksheet not in self._static_cache:
+                self._static_cache[worksheet] = deepcopy(self.tables[worksheet])
+            return deepcopy(self._static_cache[worksheet])
         return self.tables[worksheet]
 
+    def clear_cache(self) -> None:
+        self._static_cache.clear()
+        self._design_cache = None
+        self._login_cache.clear()
+        self._history_counter = 0
+
+    def load_login_data(self, force: bool = False) -> None:
+        if self._login_cache and not force:
+            return
+        self._login_cache = {
+            "Companies": self.rows("Companies"),
+            "Users": self.rows("Users"),
+        }
+
+    def design_data(self) -> dict[str, Any]:
+        if self._design_cache is None:
+            questions = self.rows("Questions")
+            options_by_question: dict[str, list[dict[str, str]]] = {}
+            conditions_by_question: dict[str, list[dict[str, str]]] = {}
+            for row in self.rows("QuestionOptions"):
+                options_by_question.setdefault(row["QuestionID"], []).append(row)
+            for row in self.rows("QuestionConditions"):
+                conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+            self._design_cache = {
+                "Questions": questions,
+                "OptionsByQuestion": options_by_question,
+                "ConditionsByQuestion": conditions_by_question,
+            }
+        return self._design_cache
+
     def company(self, company_id: str) -> dict[str, str] | None:
-        return next((row for row in self.rows("Companies") if row["CompanyID"] == company_id), None)
+        self.load_login_data()
+        return next((row for row in self._login_cache["Companies"] if row["CompanyID"] == company_id), None)
+
+    def company_by_name(self, company_name: str) -> dict[str, str] | None:
+        self.load_login_data()
+        target = company_name.strip().casefold()
+        return next((row for row in self._login_cache["Companies"] if row["CompanyName"].strip().casefold() == target), None)
 
     def user(self, email: str, company_id: str) -> dict[str, str] | None:
-        return next((row for row in self.rows("Users") if row["Email"].lower() == email.lower() and row["CompanyID"] == company_id), None)
+        self.load_login_data()
+        return next((row for row in self._login_cache["Users"] if row["Email"].lower() == email.lower() and row["CompanyID"] == company_id), None)
 
     def responses_for(self, company_id: str) -> dict[str, str]:
         return {row["QuestionID"]: row["ResponseValue"] for row in self.rows("Responses") if row["CompanyID"] == company_id}
@@ -74,8 +120,12 @@ class InMemoryRepository:
             existing.update({"ResponseValue": value, "LastModifiedBy": email, "LastModifiedTime": stamp})
         else:
             self.rows("Responses").append({"CompanyID": company_id, "QuestionID": question_id, "ResponseValue": value, "LastModifiedBy": email, "LastModifiedTime": stamp})
-        self.rows("ResponseHistory").append({"HistoryID": f"H{len(self.rows('ResponseHistory')) + 1:04}", "CompanyID": company_id, "QuestionID": question_id, "OldValue": old, "NewValue": value, "ModifiedBy": email, "ModifiedTime": stamp})
+        self.append_response_history(company_id, question_id, old, value, email, stamp)
         return True
+
+    def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str) -> None:
+        self._history_counter += 1
+        self.rows("ResponseHistory").append({"HistoryID": f"H{self._history_counter:04}", "CompanyID": company_id, "QuestionID": question_id, "OldValue": old_value, "NewValue": new_value, "ModifiedBy": email, "ModifiedTime": stamp})
 
     def submit(self, company_id: str, email: str) -> None:
         company = self.company(company_id)
@@ -89,6 +139,10 @@ class GoogleSheetsRepository:
 
     def __init__(self, spreadsheet: Any) -> None:
         self.spreadsheet = spreadsheet
+        self._rows_cache: dict[str, list[dict[str, str]]] = {}
+        self._design_cache: dict[str, Any] | None = None
+        self._login_cache: dict[str, list[dict[str, str]]] = {}
+        self._history_counter = 0
 
     @classmethod
     def from_service_account(cls, service_account_info: dict[str, Any], spreadsheet_id: str) -> "GoogleSheetsRepository":
@@ -100,10 +154,46 @@ class GoogleSheetsRepository:
         return cls(gspread.authorize(credentials).open_by_key(spreadsheet_id))
 
     def rows(self, worksheet: str) -> list[dict[str, str]]:
-        return self.spreadsheet.worksheet(worksheet).get_all_records(default_blank="")
+        if worksheet not in self._rows_cache:
+            self._rows_cache[worksheet] = self.spreadsheet.worksheet(worksheet).get_all_records(default_blank="")
+        return deepcopy(self._rows_cache[worksheet])
+
+    def clear_cache(self) -> None:
+        self._rows_cache.clear()
+        self._design_cache = None
+        self._login_cache.clear()
+        self._history_counter = 0
+
+    def load_login_data(self, force: bool = False) -> None:
+        if force:
+            self._rows_cache.pop("Companies", None)
+            self._rows_cache.pop("Users", None)
+            self._login_cache.clear()
+        if self._login_cache and not force:
+            return
+        self._login_cache = {
+            "Companies": self.rows("Companies"),
+            "Users": self.rows("Users"),
+        }
 
     def _worksheet(self, name: str):
         return self.spreadsheet.worksheet(name)
+
+    def design_data(self) -> dict[str, Any]:
+        if self._design_cache is None:
+            questions = self.rows("Questions")
+            options_by_question: dict[str, list[dict[str, str]]] = {}
+            conditions_by_question: dict[str, list[dict[str, str]]] = {}
+            for row in self.rows("QuestionOptions"):
+                options_by_question.setdefault(row["QuestionID"], []).append(row)
+            for row in self.rows("QuestionConditions"):
+                conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+            self._design_cache = {
+                "Questions": questions,
+                "OptionsByQuestion": options_by_question,
+                "ConditionsByQuestion": conditions_by_question,
+            }
+        return self._design_cache
 
     def _find_row(self, worksheet: str, predicate) -> tuple[int, dict[str, str]] | tuple[None, None]:
         for row_number, row in enumerate(self.rows(worksheet), start=2):
@@ -112,10 +202,17 @@ class GoogleSheetsRepository:
         return None, None
 
     def company(self, company_id: str) -> dict[str, str] | None:
-        return next((row for row in self.rows("Companies") if row["CompanyID"] == company_id), None)
+        self.load_login_data()
+        return next((row for row in self._login_cache["Companies"] if row["CompanyID"] == company_id), None)
+
+    def company_by_name(self, company_name: str) -> dict[str, str] | None:
+        self.load_login_data()
+        target = company_name.strip().casefold()
+        return next((row for row in self._login_cache["Companies"] if row["CompanyName"].strip().casefold() == target), None)
 
     def user(self, email: str, company_id: str) -> dict[str, str] | None:
-        return next((row for row in self.rows("Users") if row["Email"].lower() == email.lower() and row["CompanyID"] == company_id), None)
+        self.load_login_data()
+        return next((row for row in self._login_cache["Users"] if row["Email"].lower() == email.lower() and row["CompanyID"] == company_id), None)
 
     def responses_for(self, company_id: str) -> dict[str, str]:
         return {row["QuestionID"]: row["ResponseValue"] for row in self.rows("Responses") if row["CompanyID"] == company_id}
@@ -133,9 +230,14 @@ class GoogleSheetsRepository:
             sheet.update(f"A{row_number}", [[updated.get(header, "") for header in headers]])
         else:
             sheet.append_row([company_id, question_id, value, email, stamp], value_input_option="USER_ENTERED")
-        history = self._worksheet("ResponseHistory")
-        history.append_row([f"H{len(history.get_all_records(default_blank='')) + 1:04}", company_id, question_id, old, value, email, stamp], value_input_option="USER_ENTERED")
+        self.append_response_history(company_id, question_id, old, value, email, stamp)
+        self._rows_cache.pop("Responses", None)
         return True
+
+    def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str) -> None:
+        self._history_counter += 1
+        history = self._worksheet("ResponseHistory")
+        history.append_row([f"H{self._history_counter:04}", company_id, question_id, old_value, new_value, email, stamp], value_input_option="USER_ENTERED")
 
     def submit(self, company_id: str, email: str) -> None:
         row_number, current = self._find_row("Companies", lambda row: row["CompanyID"] == company_id)
@@ -146,3 +248,9 @@ class GoogleSheetsRepository:
         headers = sheet.row_values(1)
         updated = {**current, "Status": "Submitted", "LastUpdated": stamp, "SubmittedBy": email, "SubmittedTime": stamp}
         sheet.update(f"A{row_number}", [[updated.get(header, "") for header in headers]])
+        self._rows_cache.pop("Companies", None)
+        if "Companies" in self._login_cache:
+            for row in self._login_cache["Companies"]:
+                if row["CompanyID"] == company_id:
+                    row.update({"Status": "Submitted", "LastUpdated": stamp, "SubmittedBy": email, "SubmittedTime": stamp})
+                    break
