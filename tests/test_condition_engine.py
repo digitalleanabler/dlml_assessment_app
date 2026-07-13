@@ -1,4 +1,4 @@
-from app import get_cached_responses
+from app import authenticate, get_cached_responses
 from repository import GoogleSheetsRepository, InMemoryRepository
 from condition_engine import is_question_visible
 
@@ -46,6 +46,33 @@ def test_cached_responses_are_reused_until_explicit_reload():
     assert first == {"Q001": "seed"}
     assert second == {"Q001": "seed"}
     assert repo.calls == 1
+
+
+def test_sign_in_attempt_refreshes_login_data_once():
+    class DummyRepo:
+        def __init__(self) -> None:
+            self.refresh_calls: list[bool] = []
+
+        def load_login_data(self, force: bool = False) -> None:
+            self.refresh_calls.append(force)
+
+        def company_by_name(self, company_name: str) -> dict[str, str] | None:
+            if company_name == "Northwind":
+                return {"CompanyID": "C001", "CompanyName": "Northwind"}
+            return None
+
+        def user(self, email: str, company_id: str) -> dict[str, str] | None:
+            if email == "maya@northwind.example" and company_id == "C001":
+                return {"Email": email, "Name": "Maya", "CompanyID": company_id}
+            return None
+
+    repo = DummyRepo()
+
+    company, user = authenticate(repo, "Northwind", "maya@northwind.example")
+
+    assert company == {"CompanyID": "C001", "CompanyName": "Northwind"}
+    assert user == {"Email": "maya@northwind.example", "Name": "Maya", "CompanyID": "C001"}
+    assert repo.refresh_calls == [True]
 
 
 def test_design_data_is_loaded_once_and_indexed_for_fast_lookup():

@@ -70,6 +70,14 @@ def clear_answer_widgets() -> None:
     st.session_state.pop("responses_cache", None)
 
 
+def authenticate(repo: Any, company_name: str, email: str) -> tuple[Any | None, Any | None]:
+    if hasattr(repo, "load_login_data"):
+        repo.load_login_data(force=True)
+    company = repo.company_by_name(company_name) if hasattr(repo, "company_by_name") else None
+    user = repo.user(email, company["CompanyID"]) if company else None
+    return company, user
+
+
 def get_cached_responses(repo: Any, company_id: str, session_state: dict[str, Any]) -> dict[str, str]:
     cache_key = "responses_cache"
     if cache_key not in session_state:
@@ -84,8 +92,6 @@ def main() -> None:
         st.warning("Developer demo mode: using in-memory seed data. Configure Google Sheets secrets for shared persistence.")
 
     if st.session_state.identity is None:
-        if hasattr(repo, "load_login_data"):
-            repo.load_login_data(force=True)
         st.title("DLML Collaborative Assessment")
         st.caption("Sign in to work on your company’s shared assessment.")
         with st.form("sign_in"):
@@ -95,22 +101,20 @@ def main() -> None:
         if submitted:
             cleaned_company_name = company_name.strip()
             cleaned_email = email.strip().lower()
-            company = repo.company_by_name(cleaned_company_name) if hasattr(repo, "company_by_name") else None
-            user = repo.user(cleaned_email, company["CompanyID"]) if company else None
             if not cleaned_company_name or not cleaned_email:
                 st.warning("Enter both your company name and Google email address.")
-            elif not user:
-                st.warning("The company name and Google email address do not match an authorised user record.")
             else:
-                clear_answer_widgets()
-                st.session_state.identity = {**user, "CompanyName": company["CompanyName"]}
-                st.rerun()
+                company, user = authenticate(repo, cleaned_company_name, cleaned_email)
+                if not user:
+                    st.warning("The company name and Google email address do not match an authorised user record.")
+                else:
+                    clear_answer_widgets()
+                    st.session_state.identity = {**user, "CompanyName": company["CompanyName"]}
+                    st.rerun()
         st.info("The entered company name and Google email are checked against the Companies and Users worksheets before access is granted.")
         return
 
     identity = st.session_state.identity
-    if hasattr(repo, "load_login_data"):
-        repo.load_login_data(force=True)
     company = repo.company(identity["CompanyID"])
     assert company
     readonly = company["Status"] == "Submitted"
