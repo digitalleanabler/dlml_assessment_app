@@ -230,9 +230,25 @@ class GoogleSheetsRepository:
             sheet.update(f"A{row_number}", [[updated.get(header, "") for header in headers]])
         else:
             sheet.append_row([company_id, question_id, value, email, stamp], value_input_option="USER_ENTERED")
+        self._update_company_last_updated(company_id, stamp)
         self.append_response_history(company_id, question_id, old, value, email, stamp)
         self._rows_cache.pop("Responses", None)
         return True
+
+    def _update_company_last_updated(self, company_id: str, stamp: str) -> None:
+        company_row_number, current = self._find_row("Companies", lambda row: row["CompanyID"] == company_id)
+        if not current:
+            return
+        sheet = self._worksheet("Companies")
+        headers = sheet.row_values(1)
+        updated = {**current, "LastUpdated": stamp}
+        sheet.update(f"A{company_row_number}", [[updated.get(header, "") for header in headers]])
+        self._rows_cache.pop("Companies", None)
+        if "Companies" in self._login_cache:
+            for row in self._login_cache["Companies"]:
+                if row["CompanyID"] == company_id:
+                    row.update({"LastUpdated": stamp})
+                    break
 
     def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str) -> None:
         self._history_counter += 1

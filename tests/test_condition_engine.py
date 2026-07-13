@@ -75,6 +75,64 @@ def test_sign_in_attempt_refreshes_login_data_once():
     assert repo.refresh_calls == [True]
 
 
+def test_saving_response_updates_company_last_updated():
+    class FakeWorksheet:
+        def __init__(self, rows: list[dict[str, str]] | None = None, headers: list[str] | None = None) -> None:
+            self.rows = rows or []
+            self.headers = headers or []
+            self.updated_cells: list[tuple[str, list[list[str]]]] = []
+            self.appended_rows: list[list[str]] = []
+
+        def get_all_records(self, default_blank: str = "") -> list[dict[str, str]]:
+            return [dict(row) for row in self.rows]
+
+        def row_values(self, index: int) -> list[str]:
+            if index == 1:
+                return self.headers
+            return []
+
+        def update(self, cell: str, values: list[list[str]]) -> None:
+            self.updated_cells.append((cell, values))
+            if self.rows and values:
+                first_row = values[0]
+                if self.headers:
+                    for index, value in enumerate(first_row):
+                        if index < len(self.headers):
+                            self.rows[0][self.headers[index]] = value
+
+        def append_row(self, row: list[str], value_input_option: str = "USER_ENTERED") -> None:
+            self.appended_rows.append(row)
+
+    class FakeSpreadsheet:
+        def __init__(self) -> None:
+            self.worksheets = {
+                "Companies": FakeWorksheet(
+                    rows=[{"CompanyID": "C001", "CompanyName": "Northwind", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""}],
+                    headers=["CompanyID", "CompanyName", "Status", "LastUpdated", "SubmittedBy", "SubmittedTime"],
+                ),
+                "Responses": FakeWorksheet(
+                    rows=[{"CompanyID": "C001", "QuestionID": "Q001", "ResponseValue": "old", "LastModifiedBy": "", "LastModifiedTime": ""}],
+                    headers=["CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime"],
+                ),
+                "Users": FakeWorksheet(rows=[{"Email": "maya@northwind.example", "CompanyID": "C001"}], headers=["Email", "CompanyID"]),
+                "ResponseHistory": FakeWorksheet(headers=["HistoryID", "CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime"]),
+            }
+
+        def worksheet(self, name: str) -> FakeWorksheet:
+            return self.worksheets[name]
+
+    repo = GoogleSheetsRepository(FakeSpreadsheet())
+
+    saved = repo.save_response("C001", "Q001", "new", "maya@northwind.example")
+
+    assert saved is True
+    company = repo.company("C001")
+    assert company["LastUpdated"]
+    assert company["SubmittedBy"] == ""
+    assert company["SubmittedTime"] == ""
+    assert repo.spreadsheet.worksheet("Companies").updated_cells
+
+
 def test_design_data_is_loaded_once_and_indexed_for_fast_lookup():
     class FakeWorksheet:
         def __init__(self, rows: list[dict[str, str]]) -> None:
