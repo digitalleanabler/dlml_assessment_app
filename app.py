@@ -15,7 +15,6 @@ st.set_page_config(page_title="DLML Collaborative Assessment", page_icon="📝",
 @st.cache_resource
 def get_repository() -> tuple[Any, bool]:
     print("Loading repository...")
-    """Use the live Sheet when production secrets exist; otherwise allow local testing."""
     try:
         service_account_obj = st.secrets.get("gcp_service_account", {})
         service_account = dict(service_account_obj)
