@@ -175,13 +175,13 @@ def main() -> None:
                 min-width: 10rem;
             }
             [data-testid="stHorizontalBlock"]:has(#assessment-actions) button {
-                background-color: #c62828 !important;
+                background-color: #ffffff !important;
                 border-color: #c62828 !important;
-                color: #ffffff !important;
+                color: #c62828 !important;
             }
             [data-testid="stHorizontalBlock"]:has(#assessment-actions) button:hover {
-                background-color: #9f1f1f !important;
-                border-color: #9f1f1f !important;
+                background-color: #c62828 !important;
+                border-color: #c62828 !important;
                 color: #ffffff !important;
             }
             </style>
