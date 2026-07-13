@@ -1,4 +1,4 @@
-# Author: Tanakorn
+# Author: Tanakorn Tantanawat
 
 """Google Sheets persistence, with a developer-only in-memory fallback."""
 
