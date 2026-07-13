@@ -84,6 +84,26 @@ def get_cached_responses(repo: Any, company_id: str, session_state: dict[str, An
     return dict(session_state[cache_key])
 
 
+def get_missing_required_questions(
+    questions: list[dict[str, str]],
+    conditions_by_question: dict[str, list[dict[str, Any]]],
+    responses: dict[str, str],
+) -> list[str]:
+    missing: list[str] = []
+    for question in questions:
+        question_id = question["QuestionID"]
+        if str(question.get("Required", "")).upper() != "TRUE":
+            continue
+        if str(question.get("Active", "")).upper() != "TRUE":
+            continue
+        if not is_question_visible(question, conditions_by_question.get(question_id, []), responses):
+            continue
+        value = responses.get(question_id, "")
+        if not str(value).strip():
+            missing.append(question["QuestionText"])
+    return missing
+
+
 def main() -> None:
     st.session_state.setdefault("identity", None)
     repo, demo_mode = get_repository()
@@ -154,26 +174,15 @@ def main() -> None:
             [data-testid="stHorizontalBlock"]:has(#assessment-actions) button {
                 min-width: 10rem;
             }
-            [data-testid="stHorizontalBlock"]:has(#assessment-actions) [data-testid="stColumn"]:first-child button {
-                background-color: #c62828;
-                border-color: #c62828;
-                color: #ffffff;
+            [data-testid="stHorizontalBlock"]:has(#assessment-actions) button {
+                background-color: #c62828 !important;
+                border-color: #c62828 !important;
+                color: #ffffff !important;
             }
-            [data-testid="stHorizontalBlock"]:has(#assessment-actions) [data-testid="stColumn"]:first-child button:hover {
-                background-color: #9f1f1f;
-                border-color: #9f1f1f;
-                color: #ffffff;
-            }
-            [data-testid="stHorizontalBlock"]:has(#assessment-actions) [data-testid="stColumn"]:last-child button {
-                background-color: #ffffff;
-                border-color: #c62828;
-                color: #c62828;
-                float: right;
-            }
-            [data-testid="stHorizontalBlock"]:has(#assessment-actions) [data-testid="stColumn"]:last-child button:hover {
-                background-color: #fff5f5;
-                border-color: #9f1f1f;
-                color: #9f1f1f;
+            [data-testid="stHorizontalBlock"]:has(#assessment-actions) button:hover {
+                background-color: #9f1f1f !important;
+                border-color: #9f1f1f !important;
+                color: #ffffff !important;
             }
             </style>
             """,
@@ -181,7 +190,7 @@ def main() -> None:
         )
         left_actions, right_actions = st.columns(2)
         with left_actions:
-            save_clicked = st.button("Save responses", type="secondary")
+            save_clicked = st.button("Save responses", type="primary")
             st.markdown('<span id="assessment-actions"></span>', unsafe_allow_html=True)
         with right_actions:
             _, submit_action = st.columns(2)
@@ -199,9 +208,13 @@ def main() -> None:
             else:
                 st.info("There are no changed responses to save.")
         if submit_clicked:
-            missing = [question["QuestionText"] for question in visible_questions if str(question.get("Required", "")).upper() == "TRUE" and not draft_responses.get(question["QuestionID"])]
+            missing = get_missing_required_questions(
+                questions,
+                design_data["ConditionsByQuestion"],
+                draft_responses,
+            )
             if missing:
-                st.error("Complete all visible required questions before submitting: " + ", ".join(missing))
+                st.error("Complete all required questions before submitting: " + ", ".join(missing))
             else:
                 for question in visible_questions:
                     repo.save_response(identity["CompanyID"], question["QuestionID"], draft_responses.get(question["QuestionID"], ""), identity["Email"])
@@ -212,7 +225,13 @@ def main() -> None:
     with st.sidebar:
         st.subheader("Collaboration")
         st.write("All authorised users in this company edit the same response set.")
-        st.caption("Save your progress at any time. Responses remain editable until submission. After submission, no further changes can be made.")
+        st.caption(
+            "Save your progress at any time.<br>"
+            "Responses can be edited until submission.<br>"
+            "If multiple users edit the same response, the latest saved change will be kept.<br>"
+            "Once submitted, no further changes can be made.",
+            unsafe_allow_html=True,
+        )
         if st.button("Sign out"):
             clear_answer_widgets()
             st.session_state.identity = None

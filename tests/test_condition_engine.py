@@ -1,4 +1,4 @@
-from app import authenticate, get_cached_responses
+from app import authenticate, get_cached_responses, get_missing_required_questions
 from repository import GoogleSheetsRepository, InMemoryRepository
 from condition_engine import is_question_visible
 
@@ -131,6 +131,25 @@ def test_saving_response_updates_company_last_updated():
     assert company["SubmittedBy"] == ""
     assert company["SubmittedTime"] == ""
     assert repo.spreadsheet.worksheet("Companies").updated_cells
+
+
+def test_submit_validation_only_requires_required_questions_that_are_currently_visible():
+    questions = [
+        {"QuestionID": "Q001", "QuestionText": "First", "Required": "TRUE", "Active": "TRUE"},
+        {"QuestionID": "Q002", "QuestionText": "Second", "Required": "TRUE", "Active": "TRUE"},
+        {"QuestionID": "Q003", "QuestionText": "Third", "Required": "TRUE", "Active": "TRUE"},
+    ]
+    conditions_by_question = {
+        "Q002": [{"Seq": "1", "DependsOnQuestion": "Q001", "Operator": "=", "ExpectedValue": "YES", "LogicalWithNext": "END"}],
+    }
+
+    missing = get_missing_required_questions(questions, conditions_by_question, {"Q001": "NO"})
+
+    assert missing == ["Third"]
+
+    missing_when_visible = get_missing_required_questions(questions, conditions_by_question, {"Q001": "YES"})
+
+    assert missing_when_visible == ["Second", "Third"]
 
 
 def test_design_data_is_loaded_once_and_indexed_for_fast_lookup():
