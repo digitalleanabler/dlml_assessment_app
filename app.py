@@ -9,7 +9,7 @@ from condition_engine import is_question_visible
 from repository import GoogleSheetsRepository, InMemoryRepository
 
 
-st.set_page_config(page_title="DLML Collaborative Assessment", page_icon="📝", layout="centered")
+st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layout="centered")
 
 
 @st.cache_resource
@@ -69,10 +69,10 @@ def clear_answer_widgets() -> None:
     st.session_state.pop("responses_cache", None)
 
 
-def authenticate(repo: Any, company_name: str, email: str) -> tuple[Any | None, Any | None]:
+def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, Any | None]:
     if hasattr(repo, "load_login_data"):
         repo.load_login_data(force=True)
-    company = repo.company_by_name(company_name) if hasattr(repo, "company_by_name") else None
+    company = repo.company(company_id) if hasattr(repo, "company") else None
     user = repo.user(email, company["CompanyID"]) if company else None
     return company, user
 
@@ -91,33 +91,33 @@ def main() -> None:
         st.warning("Developer demo mode: using in-memory seed data. Configure Google Sheets secrets for shared persistence.")
 
     if st.session_state.identity is None:
-        st.title("DLML Collaborative Assessment")
+        st.title("DLM Lifecycle Assessment")
         st.caption("Sign in to work on your company’s shared assessment.")
         with st.form("sign_in"):
-            company_name = st.text_input("Company name")
-            email = st.text_input("Google email address", placeholder="name@gmail.com")
+            company_id = st.text_input("Company ID")
+            email = st.text_input("Email address", placeholder="name@gmail.com")
             submitted = st.form_submit_button("Continue", type="primary")
         if submitted:
-            cleaned_company_name = company_name.strip()
+            cleaned_company_id = company_id.strip()
             cleaned_email = email.strip().lower()
-            if not cleaned_company_name or not cleaned_email:
-                st.warning("Enter both your company name and Google email address.")
+            if not cleaned_company_id or not cleaned_email:
+                st.warning("Enter both your Company ID and Email address.")
             else:
-                company, user = authenticate(repo, cleaned_company_name, cleaned_email)
+                company, user = authenticate(repo, cleaned_company_id, cleaned_email)
                 if not user:
-                    st.warning("The company name and Google email address do not match an authorised user record.")
+                    st.warning("We couldn't verify your Company ID and Email Address. Please check your details and try again. If the problem persists, contact your Project Administrator.")
                 else:
                     clear_answer_widgets()
                     st.session_state.identity = {**user, "CompanyName": company["CompanyName"]}
                     st.rerun()
-        st.info("The entered company name and Google email are checked against the Companies and Users worksheets before access is granted.")
+        st.info("Use the Company ID provided by your Project Administrator and the Email Address you registered with the project. If you do not have a Company ID, please contact your Project Administrator before proceeding.")
         return
 
     identity = st.session_state.identity
     company = repo.company(identity["CompanyID"])
     assert company
     readonly = company["Status"] == "Submitted"
-    st.title("DLML Collaborative Assessment")
+    st.title("DLM Lifecycle Assessment")
     st.caption(f"{identity['CompanyName']} · Signed in as {identity['Name']} ({identity['Email']})")
     if st.button("Reload shared survey"):
         repo.clear_cache()
@@ -212,7 +212,7 @@ def main() -> None:
     with st.sidebar:
         st.subheader("Collaboration")
         st.write("All authorised users in this company edit the same response set.")
-        st.caption("Each changed value creates a ResponseHistory record. Hidden responses are retained in the backend.")
+        st.caption("Save your progress at any time. Responses remain editable until submission. After submission, no further changes can be made.")
         if st.button("Sign out"):
             clear_answer_widgets()
             st.session_state.identity = None

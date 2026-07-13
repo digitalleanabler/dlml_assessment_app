@@ -56,8 +56,8 @@ def test_sign_in_attempt_refreshes_login_data_once():
         def load_login_data(self, force: bool = False) -> None:
             self.refresh_calls.append(force)
 
-        def company_by_name(self, company_name: str) -> dict[str, str] | None:
-            if company_name == "Northwind":
+        def company(self, company_id: str) -> dict[str, str] | None:
+            if company_id == "C001":
                 return {"CompanyID": "C001", "CompanyName": "Northwind"}
             return None
 
@@ -68,7 +68,7 @@ def test_sign_in_attempt_refreshes_login_data_once():
 
     repo = DummyRepo()
 
-    company, user = authenticate(repo, "Northwind", "maya@northwind.example")
+    company, user = authenticate(repo, "C001", "maya@northwind.example")
 
     assert company == {"CompanyID": "C001", "CompanyName": "Northwind"}
     assert user == {"Email": "maya@northwind.example", "Name": "Maya", "CompanyID": "C001"}
