@@ -304,9 +304,6 @@ def main() -> None:
     if selected_page_id == "review":
         st.subheader("Review")
         st.caption("Check the readiness of your submission before sending it.")
-        if st.button("Reload review", use_container_width=True):
-            sync_draft_responses(repo, identity["CompanyID"], draft_responses)
-            st.rerun()
         for page in pages[:-1]:
             readiness = get_page_readiness(page["Questions"], design_data["ConditionsByQuestion"], draft_responses)
             st.write(f"{page['PageTitle']}: {readiness['answered']}/{readiness['total']} required visible questions answered")
