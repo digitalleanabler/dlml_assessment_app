@@ -162,6 +162,7 @@ def main() -> None:
             design_data["OptionsByQuestion"].get(question_id, []),
             key=lambda row: int(row.get("DisplayOrder", 0) or 0),
         )
+        st.divider()
         draft_responses[question_id] = value_input(question, options, responses.get(question_id, ""), readonly)
 
     st.session_state["responses_cache"] = dict(draft_responses)
