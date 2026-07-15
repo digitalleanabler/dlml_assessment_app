@@ -174,6 +174,16 @@ def sync_draft_responses(repo: Any, company_id: str, draft_responses: dict[str, 
     return draft_responses
 
 
+def reload_page_responses(repo: Any, company_id: str, draft_responses: dict[str, str], session_state: dict[str, Any]) -> dict[str, str]:
+    refreshed = dict(repo.responses_for(company_id))
+    draft_responses.clear()
+    draft_responses.update(refreshed)
+    session_state["responses_cache"] = dict(refreshed)
+    session_state["page_draft_responses"] = dict(refreshed)
+    session_state["saved_responses"] = dict(refreshed)
+    return draft_responses
+
+
 def save_page_questions(repo: Any, company_id: str, email: str, questions: list[dict[str, str]], draft_responses: dict[str, str]) -> int:
     existing = dict(st.session_state.get("saved_responses", {}))
     saved_count = 0
@@ -240,7 +250,12 @@ def main() -> None:
     st.caption(f"{identity['CompanyName']} · Signed in as {identity['Name']} ({identity['Email']})")
     if st.button("Reload shared survey"):
         repo.clear_cache()
-        sync_draft_responses(repo, identity["CompanyID"], st.session_state.setdefault("page_draft_responses", {}))
+        current_page_id = st.session_state.get("active_page_id", None)
+        page_drafts = st.session_state.setdefault("page_draft_responses", {})
+        reload_page_responses(repo, identity["CompanyID"], page_drafts, st.session_state)
+        if current_page_id is not None:
+            st.session_state["active_page_id"] = current_page_id
+            st.session_state["sidebar_page_selection"] = current_page_id
         st.rerun()
     if readonly:
         st.success(f"Submitted by {company['SubmittedBy']} on {company['SubmittedTime']}. This survey is read-only.")
@@ -318,6 +333,7 @@ def main() -> None:
     st.subheader(selected_page["PageTitle"])
     render_question_page(selected_page, design_data, draft_responses, readonly)
     if not readonly:
+        st.divider()
         save_clicked = st.button("Save this page", type="primary")
         if save_clicked:
             saved_count = save_page_questions(repo, identity["CompanyID"], identity["Email"], selected_page["Questions"], draft_responses)

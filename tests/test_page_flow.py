@@ -1,4 +1,4 @@
-from app import build_page_structure, get_page_readiness
+from app import build_page_structure, get_page_readiness, reload_page_responses
 
 
 def test_build_page_structure_groups_questions_by_page_and_includes_review():
@@ -38,3 +38,18 @@ def test_page_readiness_counts_only_visible_required_questions():
     assert readiness["answered"] == 1
     assert readiness["total"] == 2
     assert readiness["completed"] is False
+
+
+def test_reload_keeps_current_page_and_only_refreshes_saved_values():
+    class DummyRepo:
+        def responses_for(self, company_id: str):
+            return {"Q001": "repo-value", "Q002": "repo-other"}
+
+    draft_responses = {"Q001": "local-value", "Q002": "local-other"}
+    state = {"saved_responses": {"Q001": "saved-value", "Q002": "saved-other"}, "active_page_id": "P002"}
+
+    reloaded = reload_page_responses(DummyRepo(), "C001", draft_responses, state)
+
+    assert reloaded["Q001"] == "repo-value"
+    assert reloaded["Q002"] == "repo-other"
+    assert state["active_page_id"] == "P002"
