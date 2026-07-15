@@ -64,6 +64,10 @@ def value_input(question: dict[str, str], options: list[dict[str, str]], current
         choice = st.radio(label, choices, format_func=lambda item: item[1], key=key, disabled=disabled, horizontal=True)
         value = choice[0]
 
+    if str(value) != str(current):
+        protected_question_ids = st.session_state.setdefault("protected_question_ids", set())
+        protected_question_ids.add(question_id)
+
     draft_responses[question_id] = value
     return value
 
@@ -77,6 +81,24 @@ def clear_answer_widgets() -> None:
     st.session_state.pop("saved_responses", None)
     st.session_state.pop("active_page_id", None)
     st.session_state.pop("sidebar_page_selection", None)
+    st.session_state.pop("protected_question_ids", None)
+
+
+def sync_widget_state_from_responses(
+    responses: dict[str, str],
+    *,
+    force: bool = False,
+    protected_question_ids: set[str] | None = None,
+) -> None:
+    protected = set(protected_question_ids or set())
+    for question_id, value in responses.items():
+        key = f"answer_{question_id}"
+        if question_id in protected:
+            continue
+        if force:
+            st.session_state[key] = value
+        elif key not in st.session_state:
+            st.session_state[key] = value
 
 
 def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, Any | None]:
@@ -164,23 +186,81 @@ def get_page_readiness(
     return {"answered": answered, "total": total, "completed": answered == total, "missing": missing}
 
 
+def merge_responses_with_repository(current: dict[str, str], refreshed: dict[str, str], saved: dict[str, str], protected_question_ids: set[str] | None = None) -> dict[str, str]:
+    merged = dict(current)
+    protected = protected_question_ids or set()
+    for question_id, value in refreshed.items():
+        current_value = merged.get(question_id, "")
+        saved_value = saved.get(question_id, "")
+        if question_id in protected:
+            continue
+        if str(current_value).strip() and str(current_value) != str(saved_value):
+            continue
+        merged[question_id] = value
+    return merged
+
+
 def sync_draft_responses(repo: Any, company_id: str, draft_responses: dict[str, str]) -> dict[str, str]:
+    if hasattr(repo, "clear_cache"):
+        repo.clear_cache()
     refreshed = dict(repo.responses_for(company_id))
+    saved = dict(st.session_state.get("saved_responses", {}))
+    protected_question_ids = set(st.session_state.get("protected_question_ids", set()))
+    merged = merge_responses_with_repository(draft_responses, refreshed, saved, protected_question_ids)
     draft_responses.clear()
-    draft_responses.update(refreshed)
+    draft_responses.update(merged)
     st.session_state["responses_cache"] = dict(refreshed)
-    st.session_state["page_draft_responses"] = dict(refreshed)
-    st.session_state["saved_responses"] = dict(refreshed)
+    st.session_state["page_draft_responses"] = dict(draft_responses)
+    st.session_state["saved_responses"] = dict(saved or refreshed)
+    sync_widget_state_from_responses(merged, force=True, protected_question_ids=protected_question_ids)
     return draft_responses
 
 
 def reload_page_responses(repo: Any, company_id: str, draft_responses: dict[str, str], session_state: dict[str, Any]) -> dict[str, str]:
+    if hasattr(repo, "clear_cache"):
+        repo.clear_cache()
     refreshed = dict(repo.responses_for(company_id))
+    saved = dict(session_state.get("saved_responses", {}))
+    protected_question_ids = set(session_state.get("protected_question_ids", set()))
+    merged = merge_responses_with_repository(draft_responses, refreshed, saved, protected_question_ids)
     draft_responses.clear()
-    draft_responses.update(refreshed)
+    draft_responses.update(merged)
     session_state["responses_cache"] = dict(refreshed)
-    session_state["page_draft_responses"] = dict(refreshed)
-    session_state["saved_responses"] = dict(refreshed)
+    session_state["page_draft_responses"] = dict(draft_responses)
+    session_state["saved_responses"] = dict(saved or refreshed)
+    sync_widget_state_from_responses(merged, force=True, protected_question_ids=protected_question_ids)
+    return draft_responses
+
+
+def reload_page_responses_for_page(
+    repo: Any,
+    company_id: str,
+    draft_responses: dict[str, str],
+    session_state: dict[str, Any],
+    questions: list[dict[str, str]],
+) -> dict[str, str]:
+    if hasattr(repo, "clear_cache"):
+        repo.clear_cache()
+    refreshed = dict(repo.responses_for(company_id))
+    saved = dict(session_state.get("saved_responses", {}))
+    protected_question_ids = set(session_state.get("protected_question_ids", set()))
+    page_question_ids = {str(question["QuestionID"]) for question in questions if question.get("QuestionID")}
+
+    for question_id, value in list(refreshed.items()):
+        if question_id not in page_question_ids:
+            continue
+        current_value = draft_responses.get(question_id, "")
+        saved_value = saved.get(question_id, "")
+        if question_id in protected_question_ids:
+            continue
+        if str(current_value).strip() and str(current_value) != str(saved_value):
+            continue
+        draft_responses[question_id] = value
+
+    session_state["responses_cache"] = dict(refreshed)
+    session_state["page_draft_responses"] = dict(draft_responses)
+    session_state["saved_responses"] = dict(saved or refreshed)
+    sync_widget_state_from_responses(draft_responses, force=True, protected_question_ids=protected_question_ids)
     return draft_responses
 
 
@@ -196,6 +276,9 @@ def save_page_questions(repo: Any, company_id: str, email: str, questions: list[
     st.session_state["responses_cache"] = dict(draft_responses)
     st.session_state["page_draft_responses"] = dict(draft_responses)
     st.session_state["saved_responses"] = dict(draft_responses)
+    protected_question_ids = st.session_state.setdefault("protected_question_ids", set())
+    for question in questions:
+        protected_question_ids.discard(question["QuestionID"])
     return saved_count
 
 
@@ -266,6 +349,8 @@ def main() -> None:
     draft_responses = st.session_state.setdefault("page_draft_responses", {})
     if not draft_responses:
         sync_draft_responses(repo, identity["CompanyID"], draft_responses)
+    else:
+        sync_widget_state_from_responses(draft_responses)
 
     with st.sidebar:
         st.subheader("Pages")
@@ -281,7 +366,8 @@ def main() -> None:
                 saved_count = save_page_questions(repo, identity["CompanyID"], identity["Email"], [page for page in pages if page["PageID"] == previous_page_id][0]["Questions"], draft_responses)
                 if saved_count:
                     st.toast(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {page_titles[previous_page_id]}.")
-            sync_draft_responses(repo, identity["CompanyID"], draft_responses)
+            selected_page_questions = [page for page in pages if page["PageID"] == selected_page_id][0]["Questions"]
+            reload_page_responses_for_page(repo, identity["CompanyID"], draft_responses, st.session_state, selected_page_questions)
         st.session_state["active_page_id"] = selected_page_id
 
         st.divider()
