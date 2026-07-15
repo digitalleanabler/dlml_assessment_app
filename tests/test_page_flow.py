@@ -1,6 +1,6 @@
 import streamlit as st
 
-from app import (
+from app.app import (
     build_page_structure,
     get_page_readiness,
     reload_page_responses,

@@ -1,6 +1,6 @@
-from app import authenticate, get_cached_responses, get_missing_required_questions
-from repository import GoogleSheetsRepository, InMemoryRepository
-from condition_engine import is_question_visible
+from app.app import authenticate, get_cached_responses, get_missing_required_questions
+from app.repository import GoogleSheetsRepository, InMemoryRepository
+from app.condition_engine import is_question_visible
 
 
 Q3 = {"QuestionID": "Q003", "Active": "TRUE"}

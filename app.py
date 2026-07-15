@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import streamlit as st
 
-from condition_engine import is_question_visible
-from repository import GoogleSheetsRepository, InMemoryRepository
+try:
+    from .condition_engine import is_question_visible
+    from .repository import ExcelRepository, GoogleSheetsRepository, InMemoryRepository
+except ImportError:  # pragma: no cover - support running app.py directly
+    from condition_engine import is_question_visible
+    from repository import ExcelRepository, GoogleSheetsRepository, InMemoryRepository
 
 
 st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layout="centered")
@@ -14,6 +19,16 @@ st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layo
 @st.cache_resource
 def get_repository() -> tuple[Any, bool]:
     print("Loading repository...")
+    app_env = (os.getenv("app_env") or "").strip().lower()
+    if app_env == "local":
+        try:
+            print("Using Excel workbook repository")
+            return ExcelRepository(), False
+        except Exception as exc:
+            st.warning(f"Unable to load local workbook database: {exc}")
+            print(f"Unable to load local workbook database: {exc}")
+            return InMemoryRepository(), True
+
     try:
         service_account_obj = st.secrets.get("gcp_service_account", {})
         service_account = dict(service_account_obj)
