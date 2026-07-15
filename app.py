@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import streamlit as st
@@ -41,25 +40,32 @@ def get_repository() -> tuple[Any, bool]:
     return InMemoryRepository(), True
 
 
-def value_input(question: dict[str, str], options: list[dict[str, str]], current: str, disabled: bool) -> str:
-    key = f"answer_{question['QuestionID']}"
+def value_input(question: dict[str, str], options: list[dict[str, str]], current: str, disabled: bool, draft_responses: dict[str, str]) -> str:
+    question_id = str(question["QuestionID"])
+    key = f"answer_{question_id}"
     label = question["QuestionText"] + (" *" if str(question.get("Required", "")).upper() == "TRUE" else "")
     kind = question["AnswerType"].upper()
+
     if key not in st.session_state:
         st.session_state[key] = current
+
     if kind == "TEXT":
-        return st.text_area(label, key=key, disabled=disabled)
-    if kind == "NUMBER":
-        return st.text_input(label, key=key, disabled=disabled, inputmode="numeric")
-    if kind == "DATE":
-        return st.text_input(label, key=key, disabled=disabled, placeholder="YYYY-MM-DD")
-    if kind == "YESNO":
-        options = [{"OptionValue": "", "DisplayText": "Select an answer"}, {"OptionValue": "YES", "DisplayText": "Yes"}, {"OptionValue": "NO", "DisplayText": "No"}]
-    choices = [("", "Select an answer")] + [(option["OptionValue"], option["DisplayText"]) for option in options]
-    if st.session_state[key] == current:
-        st.session_state[key] = next((option for option in choices if option[0] == current), choices[0])
-    choice = st.radio(label, choices, format_func=lambda item: item[1], key=key, disabled=disabled, horizontal=True)
-    return choice[0]
+        value = st.text_area(label, key=key, disabled=disabled)
+    elif kind == "NUMBER":
+        value = st.text_input(label, key=key, disabled=disabled, inputmode="numeric")
+    elif kind == "DATE":
+        value = st.text_input(label, key=key, disabled=disabled, placeholder="YYYY-MM-DD")
+    else:
+        if kind == "YESNO":
+            options = [{"OptionValue": "", "DisplayText": "Select an answer"}, {"OptionValue": "YES", "DisplayText": "Yes"}, {"OptionValue": "NO", "DisplayText": "No"}]
+        choices = [("", "Select an answer")] + [(option["OptionValue"], option["DisplayText"]) for option in options]
+        if key not in st.session_state or st.session_state[key] == current:
+            st.session_state[key] = next((option for option in choices if option[0] == current), choices[0])
+        choice = st.radio(label, choices, format_func=lambda item: item[1], key=key, disabled=disabled, horizontal=True)
+        value = choice[0]
+
+    draft_responses[question_id] = value
+    return value
 
 
 def clear_answer_widgets() -> None:
@@ -67,6 +73,10 @@ def clear_answer_widgets() -> None:
         if key.startswith("answer_"):
             del st.session_state[key]
     st.session_state.pop("responses_cache", None)
+    st.session_state.pop("page_draft_responses", None)
+    st.session_state.pop("saved_responses", None)
+    st.session_state.pop("active_page_id", None)
+    st.session_state.pop("sidebar_page_selection", None)
 
 
 def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, Any | None]:
@@ -82,6 +92,31 @@ def get_cached_responses(repo: Any, company_id: str, session_state: dict[str, An
     if cache_key not in session_state:
         session_state[cache_key] = dict(repo.responses_for(company_id))
     return dict(session_state[cache_key])
+
+
+def build_page_structure(design_data: dict[str, Any]) -> list[dict[str, Any]]:
+    pages: list[dict[str, Any]] = []
+    page_rows = design_data.get("Pages", [])
+    if page_rows:
+        for row in page_rows:
+            page_id = str(row.get("PageID", "") or "").strip()
+            if not page_id:
+                continue
+            pages.append({"PageID": page_id, "PageTitle": str(row.get("PageTitle", page_id) or page_id), "Questions": []})
+    else:
+        pages.append({"PageID": "default", "PageTitle": "Assessment", "Questions": []})
+
+    page_lookup = {page["PageID"]: page for page in pages}
+    questions = sorted(design_data.get("Questions", []), key=lambda row: int(str(row.get("Sequence", "0") or "0")))
+    for question in questions:
+        page_id = str(question.get("PageID", "") or "").strip()
+        if page_id and page_id in page_lookup:
+            page_lookup[page_id]["Questions"].append(question)
+    for page in pages:
+        page["Questions"].sort(key=lambda row: int(str(row.get("Sequence", "0") or "0")))
+
+    pages.append({"PageID": "review", "PageTitle": "Review", "Questions": []})
+    return pages
 
 
 def get_missing_required_questions(
@@ -102,6 +137,70 @@ def get_missing_required_questions(
         if not str(value).strip():
             missing.append(question["QuestionText"])
     return missing
+
+
+def get_page_readiness(
+    questions: list[dict[str, str]],
+    conditions_by_question: dict[str, list[dict[str, Any]]],
+    responses: dict[str, str],
+) -> dict[str, Any]:
+    answered = 0
+    total = 0
+    missing: list[str] = []
+    for question in questions:
+        question_id = question["QuestionID"]
+        if str(question.get("Required", "")).upper() != "TRUE":
+            continue
+        if str(question.get("Active", "")).upper() != "TRUE":
+            continue
+        if not is_question_visible(question, conditions_by_question.get(question_id, []), responses):
+            continue
+        total += 1
+        value = str(responses.get(question_id, "") or "").strip()
+        if value:
+            answered += 1
+        else:
+            missing.append(question["QuestionText"])
+    return {"answered": answered, "total": total, "completed": answered == total, "missing": missing}
+
+
+def sync_draft_responses(repo: Any, company_id: str, draft_responses: dict[str, str]) -> dict[str, str]:
+    refreshed = dict(repo.responses_for(company_id))
+    draft_responses.clear()
+    draft_responses.update(refreshed)
+    st.session_state["responses_cache"] = dict(refreshed)
+    st.session_state["page_draft_responses"] = dict(refreshed)
+    st.session_state["saved_responses"] = dict(refreshed)
+    return draft_responses
+
+
+def save_page_questions(repo: Any, company_id: str, email: str, questions: list[dict[str, str]], draft_responses: dict[str, str]) -> int:
+    existing = dict(st.session_state.get("saved_responses", {}))
+    saved_count = 0
+    for question in questions:
+        question_id = question["QuestionID"]
+        value = draft_responses.get(question_id, "")
+        if str(existing.get(question_id, "")) != str(value):
+            repo.save_response(company_id, question_id, value, email)
+            saved_count += 1
+    st.session_state["responses_cache"] = dict(draft_responses)
+    st.session_state["page_draft_responses"] = dict(draft_responses)
+    st.session_state["saved_responses"] = dict(draft_responses)
+    return saved_count
+
+
+def render_question_page(page: dict[str, Any], design_data: dict[str, Any], draft_responses: dict[str, str], readonly: bool) -> None:
+    for question in page.get("Questions", []):
+        question_id = question["QuestionID"]
+        conditions = design_data["ConditionsByQuestion"].get(question_id, [])
+        if not is_question_visible(question, conditions, draft_responses):
+            continue
+        options = sorted(
+            design_data["OptionsByQuestion"].get(question_id, []),
+            key=lambda row: int(row.get("DisplayOrder", 0) or 0),
+        )
+        st.divider()
+        value_input(question, options, draft_responses.get(question_id, ""), readonly, draft_responses)
 
 
 def main() -> None:
@@ -141,89 +240,36 @@ def main() -> None:
     st.caption(f"{identity['CompanyName']} · Signed in as {identity['Name']} ({identity['Email']})")
     if st.button("Reload shared survey"):
         repo.clear_cache()
-        st.session_state["responses_cache"] = dict(repo.responses_for(identity["CompanyID"]))
+        sync_draft_responses(repo, identity["CompanyID"], st.session_state.setdefault("page_draft_responses", {}))
         st.rerun()
     if readonly:
         st.success(f"Submitted by {company['SubmittedBy']} on {company['SubmittedTime']}. This survey is read-only.")
 
     design_data = repo.design_data()
-    questions = sorted(design_data["Questions"], key=lambda row: int(row["Sequence"]))
-    responses = get_cached_responses(repo, identity["CompanyID"], st.session_state)
-
-    draft_responses = dict(responses)
-    visible_questions: list[dict[str, str]] = []
-    for question in questions:
-        question_id = question["QuestionID"]
-        conditions = design_data["ConditionsByQuestion"].get(question_id, [])
-        if not is_question_visible(question, conditions, draft_responses):
-            continue
-        visible_questions.append(question)
-        options = sorted(
-            design_data["OptionsByQuestion"].get(question_id, []),
-            key=lambda row: int(row.get("DisplayOrder", 0) or 0),
-        )
-        st.divider()
-        draft_responses[question_id] = value_input(question, options, responses.get(question_id, ""), readonly)
-
-    st.session_state["responses_cache"] = dict(draft_responses)
-
-    if not readonly:
-        st.divider()
-        st.markdown(
-            """
-            <style>
-            [data-testid="stHorizontalBlock"]:has(#assessment-actions) button {
-                min-width: 10rem;
-            }
-            [data-testid="stHorizontalBlock"]:has(#assessment-actions) button {
-                background-color: #ffffff !important;
-                border-color: #c62828 !important;
-                color: #c62828 !important;
-            }
-            [data-testid="stHorizontalBlock"]:has(#assessment-actions) button:hover {
-                background-color: #c62828 !important;
-                border-color: #c62828 !important;
-                color: #ffffff !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-        left_actions, right_actions = st.columns(2)
-        with left_actions:
-            save_clicked = st.button("Save responses", type="primary")
-            st.markdown('<span id="assessment-actions"></span>', unsafe_allow_html=True)
-        with right_actions:
-            _, submit_action = st.columns(2)
-            with submit_action:
-                submit_clicked = st.button("Submit assessment", type="primary", use_container_width=True)
-
-        if save_clicked:
-            saved_count = sum(
-                repo.save_response(identity["CompanyID"], question["QuestionID"], draft_responses.get(question["QuestionID"], ""), identity["Email"])
-                for question in visible_questions
-            )
-            if saved_count:
-                st.session_state["responses_cache"] = dict(draft_responses)
-                st.success(f"Saved {saved_count} response{'s' if saved_count != 1 else ''}. You can continue editing.")
-            else:
-                st.info("There are no changed responses to save.")
-        if submit_clicked:
-            missing = get_missing_required_questions(
-                questions,
-                design_data["ConditionsByQuestion"],
-                draft_responses,
-            )
-            if missing:
-                st.error("Complete all required questions before submitting: " + ", ".join(missing))
-            else:
-                for question in visible_questions:
-                    repo.save_response(identity["CompanyID"], question["QuestionID"], draft_responses.get(question["QuestionID"], ""), identity["Email"])
-                st.session_state["responses_cache"] = dict(draft_responses)
-                repo.submit(identity["CompanyID"], identity["Email"])
-                st.rerun()
+    pages = build_page_structure(design_data)
+    all_questions = [question for page in pages[:-1] for question in page["Questions"]]
+    draft_responses = st.session_state.setdefault("page_draft_responses", {})
+    if not draft_responses:
+        sync_draft_responses(repo, identity["CompanyID"], draft_responses)
 
     with st.sidebar:
+        st.subheader("Pages")
+        page_options = [page["PageID"] for page in pages]
+        page_titles = {page["PageID"]: page["PageTitle"] for page in pages}
+        st.session_state.setdefault("sidebar_page_selection", page_options[0])
+        selected_page_id = st.radio("Navigate", page_options, format_func=lambda page_id: page_titles[page_id], key="sidebar_page_selection")
+        if "active_page_id" not in st.session_state:
+            st.session_state["active_page_id"] = selected_page_id
+        previous_page_id = st.session_state["active_page_id"]
+        if previous_page_id != selected_page_id:
+            if previous_page_id != "review":
+                saved_count = save_page_questions(repo, identity["CompanyID"], identity["Email"], [page for page in pages if page["PageID"] == previous_page_id][0]["Questions"], draft_responses)
+                if saved_count:
+                    st.toast(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {page_titles[previous_page_id]}.")
+            sync_draft_responses(repo, identity["CompanyID"], draft_responses)
+        st.session_state["active_page_id"] = selected_page_id
+
+        st.divider()
         st.subheader("Collaboration")
         st.write("All authorised users in this company edit the same response set.")
         st.caption(
@@ -237,6 +283,48 @@ def main() -> None:
             clear_answer_widgets()
             st.session_state.identity = None
             st.rerun()
+
+    selected_page = next(page for page in pages if page["PageID"] == selected_page_id)
+
+    if selected_page_id == "review":
+        st.subheader("Review")
+        st.caption("Check the readiness of your submission before sending it.")
+        if st.button("Reload review", use_container_width=True):
+            sync_draft_responses(repo, identity["CompanyID"], draft_responses)
+            st.rerun()
+        for page in pages[:-1]:
+            readiness = get_page_readiness(page["Questions"], design_data["ConditionsByQuestion"], draft_responses)
+            st.write(f"{page['PageTitle']}: {readiness['answered']}/{readiness['total']} required visible questions answered")
+            if readiness["total"]:
+                st.progress(readiness["answered"] / readiness["total"])
+            else:
+                st.progress(0)
+        missing = get_missing_required_questions(all_questions, design_data["ConditionsByQuestion"], draft_responses)
+        if missing:
+            st.warning("Missing required visible answers: " + ", ".join(missing))
+        else:
+            st.success("All required visible questions are answered.")
+        if not readonly:
+            if st.button("Submit assessment", type="primary", use_container_width=True):
+                missing = get_missing_required_questions(all_questions, design_data["ConditionsByQuestion"], draft_responses)
+                if missing:
+                    st.error("Complete all required questions before submitting: " + ", ".join(missing))
+                else:
+                    save_page_questions(repo, identity["CompanyID"], identity["Email"], all_questions, draft_responses)
+                    repo.submit(identity["CompanyID"], identity["Email"])
+                    st.rerun()
+        return
+
+    st.subheader(selected_page["PageTitle"])
+    render_question_page(selected_page, design_data, draft_responses, readonly)
+    if not readonly:
+        save_clicked = st.button("Save this page", type="primary")
+        if save_clicked:
+            saved_count = save_page_questions(repo, identity["CompanyID"], identity["Email"], selected_page["Questions"], draft_responses)
+            if saved_count:
+                st.success(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {selected_page['PageTitle']}.")
+            else:
+                st.info("There are no changed responses to save on this page.")
 
 
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-SHEETS = ("Companies", "Users", "Questions", "QuestionOptions", "QuestionConditions", "Responses", "ResponseHistory")
-STATIC_TABLES = {"Questions", "QuestionOptions", "QuestionConditions"}
+SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "Responses", "ResponseHistory")
+STATIC_TABLES = {"Pages", "Questions", "QuestionOptions", "QuestionConditions"}
 
 
 def now() -> str:
@@ -27,10 +27,14 @@ SEED: dict[str, list[dict[str, str]]] = {
         {"Email": "noah@northwind.example", "Name": "Noah Patel", "CompanyID": "C001"},
         {"Email": "sofia@contoso.example", "Name": "Sofia Reyes", "CompanyID": "C002"},
     ],
+    "Pages": [
+        {"PageID": "P001", "PageTitle": "Business Goal"},
+        {"PageID": "P002", "PageTitle": "Business Objectives"},
+    ],
     "Questions": [
-        {"QuestionID": "Q001", "Sequence": "1", "QuestionText": "Describe your company", "AnswerType": "Text", "Required": "TRUE", "Active": "TRUE"},
-        {"QuestionID": "Q002", "Sequence": "2", "QuestionText": "Lean implementation level", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
-        {"QuestionID": "Q003", "Sequence": "3", "QuestionText": "Is TPM implemented?", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
+        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "Describe your company", "AnswerType": "Text", "Required": "TRUE", "Active": "TRUE"},
+        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "Lean implementation level", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
+        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "Is TPM implemented?", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
     ],
     "QuestionOptions": [
         {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "None"},
@@ -87,7 +91,12 @@ class InMemoryRepository:
                 options_by_question.setdefault(row["QuestionID"], []).append(row)
             for row in self.rows("QuestionConditions"):
                 conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+            try:
+                pages = self.rows("Pages")
+            except KeyError:
+                pages = []
             self._design_cache = {
+                "Pages": pages,
                 "Questions": questions,
                 "OptionsByQuestion": options_by_question,
                 "ConditionsByQuestion": conditions_by_question,
@@ -188,7 +197,12 @@ class GoogleSheetsRepository:
                 options_by_question.setdefault(row["QuestionID"], []).append(row)
             for row in self.rows("QuestionConditions"):
                 conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+            try:
+                pages = self.rows("Pages")
+            except KeyError:
+                pages = []
             self._design_cache = {
+                "Pages": pages,
                 "Questions": questions,
                 "OptionsByQuestion": options_by_question,
                 "ConditionsByQuestion": conditions_by_question,
