@@ -105,6 +105,14 @@ class ExcelRepository:
                     worksheet.append(headers)
         return workbook
 
+    def _refresh_workbook_from_disk(self) -> None:
+        if not self.workbook_path.exists():
+            return
+        self._workbook = load_workbook(self.workbook_path, data_only=False)
+        self._rows_cache.clear()
+        self._design_cache = None
+        self._login_cache.clear()
+
     def _sheet_headers(self, worksheet: str) -> list[str]:
         ws = self._workbook[worksheet]
         if ws.max_row == 0:
@@ -132,6 +140,7 @@ class ExcelRepository:
         return deepcopy(self._rows_for_sheet(worksheet))
 
     def clear_cache(self) -> None:
+        self._refresh_workbook_from_disk()
         self._rows_cache.clear()
         self._design_cache = None
         self._login_cache.clear()

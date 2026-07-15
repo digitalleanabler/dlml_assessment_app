@@ -64,6 +64,19 @@ def test_reload_keeps_current_page_and_only_refreshes_saved_values():
     assert state["active_page_id"] == "P002"
 
 
+def test_explicit_reload_overrides_local_draft_with_latest_repository_values():
+    class DummyRepo:
+        def responses_for(self, company_id: str):
+            return {"Q001": "repo-value"}
+
+    draft_responses = {"Q001": "local-value"}
+    state = {"saved_responses": {"Q001": "saved-value"}}
+
+    reloaded = reload_page_responses(DummyRepo(), "C001", draft_responses, state, force=True)
+
+    assert reloaded["Q001"] == "repo-value"
+
+
 def test_sync_widget_state_updates_session_state_for_current_page():
     st.session_state.clear()
     st.session_state["answer_Q001"] = "old"

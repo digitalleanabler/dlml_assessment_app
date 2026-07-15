@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from app.repository import ExcelRepository
 
@@ -37,3 +37,24 @@ def test_excel_repository_round_trips_responses(tmp_path: Path) -> None:
 
     assert repo.responses_for("C001")["Q001"] == "Hello"
     assert repo.company("C001")["LastUpdated"]
+
+
+def test_excel_repository_reloads_changes_from_disk(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "external-change.xlsx"
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    workbook.create_sheet("Responses")
+    workbook["Responses"].append(["CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime"])
+    workbook.save(workbook_path)
+
+    repo = ExcelRepository(workbook_path)
+
+    assert repo.responses_for("C001") == {}
+
+    external_workbook = load_workbook(workbook_path)
+    external_workbook["Responses"].append(["C001", "Q001", "Updated from disk", "", ""])
+    external_workbook.save(workbook_path)
+
+    repo.clear_cache()
+
+    assert repo.responses_for("C001")["Q001"] == "Updated from disk"

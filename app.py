@@ -79,6 +79,13 @@ def value_input(question: dict[str, str], options: list[dict[str, str]], current
         choice = st.radio(label, choices, format_func=lambda item: item[1], key=key, disabled=disabled, horizontal=True)
         value = choice[0]
 
+    if kind in {"TEXT", "NUMBER", "DATE"}:
+        widget_state = st.session_state.get(key, value)
+        if isinstance(widget_state, tuple):
+            value = widget_state[0]
+        else:
+            value = widget_state
+
     if str(value) != str(current):
         protected_question_ids = st.session_state.setdefault("protected_question_ids", set())
         protected_question_ids.add(question_id)
@@ -231,15 +238,20 @@ def sync_draft_responses(repo: Any, company_id: str, draft_responses: dict[str, 
     return draft_responses
 
 
-def reload_page_responses(repo: Any, company_id: str, draft_responses: dict[str, str], session_state: dict[str, Any]) -> dict[str, str]:
+def reload_page_responses(repo: Any, company_id: str, draft_responses: dict[str, str], session_state: dict[str, Any], *, force: bool = False) -> dict[str, str]:
     if hasattr(repo, "clear_cache"):
         repo.clear_cache()
     refreshed = dict(repo.responses_for(company_id))
     saved = dict(session_state.get("saved_responses", {}))
     protected_question_ids = set(session_state.get("protected_question_ids", set()))
-    merged = merge_responses_with_repository(draft_responses, refreshed, saved, protected_question_ids)
-    draft_responses.clear()
-    draft_responses.update(merged)
+    if force:
+        draft_responses.clear()
+        draft_responses.update(refreshed)
+        merged = dict(refreshed)
+    else:
+        merged = merge_responses_with_repository(draft_responses, refreshed, saved, protected_question_ids)
+        draft_responses.clear()
+        draft_responses.update(merged)
     session_state["responses_cache"] = dict(refreshed)
     session_state["page_draft_responses"] = dict(draft_responses)
     session_state["saved_responses"] = dict(saved or refreshed)
@@ -284,7 +296,15 @@ def save_page_questions(repo: Any, company_id: str, email: str, questions: list[
     saved_count = 0
     for question in questions:
         question_id = question["QuestionID"]
-        value = draft_responses.get(question_id, "")
+        key = f"answer_{question_id}"
+        widget_value = st.session_state.get(key, None)
+        if isinstance(widget_value, tuple):
+            value = widget_value[0]
+        elif widget_value is None:
+            value = draft_responses.get(question_id, "")
+        else:
+            value = widget_value
+        draft_responses[question_id] = value
         if str(existing.get(question_id, "")) != str(value):
             repo.save_response(company_id, question_id, value, email)
             saved_count += 1
@@ -350,7 +370,7 @@ def main() -> None:
         repo.clear_cache()
         current_page_id = st.session_state.get("active_page_id", None)
         page_drafts = st.session_state.setdefault("page_draft_responses", {})
-        reload_page_responses(repo, identity["CompanyID"], page_drafts, st.session_state)
+        reload_page_responses(repo, identity["CompanyID"], page_drafts, st.session_state, force=True)
         if current_page_id is not None:
             st.session_state["active_page_id"] = current_page_id
             st.session_state["sidebar_page_selection"] = current_page_id
