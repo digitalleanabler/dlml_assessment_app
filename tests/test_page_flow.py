@@ -6,6 +6,7 @@ from app.app import (
     reload_page_responses,
     reload_page_responses_for_page,
     sync_draft_responses,
+    sync_question_visibility_state,
     sync_widget_state_from_responses,
 )
 
@@ -30,6 +31,63 @@ def test_build_page_structure_groups_questions_by_page_and_includes_review():
     assert [page["PageID"] for page in pages] == ["P001", "P002", "review"]
     assert [question["QuestionID"] for question in pages[1]["Questions"]] == ["Q002", "Q003"]
     assert pages[2]["PageTitle"] == "Review"
+
+
+def test_question_visibility_state_resets_reappearing_question_to_empty():
+    pages = [
+        {
+            "PageID": "P001",
+            "Questions": [
+                {"QuestionID": "Q001", "QuestionText": "Trigger", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
+                {"QuestionID": "Q002", "QuestionText": "Dependent", "AnswerType": "Text", "Required": "TRUE", "Active": "TRUE"},
+            ],
+        }
+    ]
+    design_data = {
+        "ConditionsByQuestion": {
+            "Q002": [{"Seq": "1", "DependsOnQuestion": "Q001", "Operator": "=", "ExpectedValue": "YES", "LogicalWithNext": "END"}],
+        },
+        "OptionsByQuestion": {},
+    }
+    draft_responses = {"Q001": "YES", "Q002": "previous answer"}
+    session_state = {
+        "visible_question_ids": set(),
+        "previously_seen_question_ids": {"Q002"},
+    }
+
+    sync_question_visibility_state(pages, design_data, draft_responses, session_state)
+
+    assert draft_responses["Q002"] == ""
+    assert session_state["answer_Q002"] == ""
+
+
+def test_question_visibility_state_preserves_new_reappearing_selection():
+    pages = [
+        {
+            "PageID": "P001",
+            "Questions": [
+                {"QuestionID": "Q001", "QuestionText": "Trigger", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
+                {"QuestionID": "Q002", "QuestionText": "Dependent", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
+            ],
+        }
+    ]
+    design_data = {
+        "ConditionsByQuestion": {
+            "Q002": [{"Seq": "1", "DependsOnQuestion": "Q001", "Operator": "=", "ExpectedValue": "YES", "LogicalWithNext": "END"}],
+        },
+        "OptionsByQuestion": {},
+    }
+    draft_responses = {"Q001": "YES", "Q002": ""}
+    session_state = {
+        "visible_question_ids": set(),
+        "previously_seen_question_ids": {"Q002"},
+        "answer_Q002": ("YES", "Yes"),
+    }
+
+    sync_question_visibility_state(pages, design_data, draft_responses, session_state)
+
+    assert draft_responses["Q002"] == "YES"
+    assert session_state["answer_Q002"] == ("YES", "Yes")
 
 
 def test_page_readiness_counts_only_visible_required_questions():
@@ -124,6 +182,16 @@ def test_sync_widget_state_preserves_existing_user_input_by_default():
     sync_widget_state_from_responses(responses)
 
     assert st.session_state["answer_Q001"] == "typed-value"
+
+
+def test_force_sync_widget_state_overrides_protected_user_input():
+    st.session_state.clear()
+    st.session_state["answer_Q001"] = "typed-value"
+
+    responses = {"Q001": "repo-value"}
+    sync_widget_state_from_responses(responses, force=True, protected_question_ids={"Q001"})
+
+    assert st.session_state["answer_Q001"] == "repo-value"
 
 
 def test_sync_draft_responses_preserves_current_user_input():

@@ -112,6 +112,57 @@ def clear_answer_widgets() -> None:
     st.session_state.pop("active_page_id", None)
     st.session_state.pop("sidebar_page_selection", None)
     st.session_state.pop("protected_question_ids", None)
+    st.session_state.pop("visible_question_ids", None)
+    st.session_state.pop("previously_seen_question_ids", None)
+
+
+def sync_question_visibility_state(
+    pages: list[dict[str, Any]],
+    design_data: dict[str, Any],
+    draft_responses: dict[str, str],
+    session_state: dict[str, Any],
+) -> None:
+    previous_visible_question_ids = set(session_state.get("visible_question_ids", set()))
+    previously_seen_question_ids = set(session_state.get("previously_seen_question_ids", set()))
+    current_visible_question_ids: set[str] = set()
+    protected_question_ids = set(session_state.setdefault("protected_question_ids", set()))
+
+    for page in pages:
+        for question in page.get("Questions", []):
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+
+            conditions = design_data["ConditionsByQuestion"].get(question_id, [])
+            is_visible = is_question_visible(question, conditions, draft_responses)
+            if is_visible:
+                current_visible_question_ids.add(question_id)
+                was_previously_seen = question_id in previously_seen_question_ids
+                previously_seen_question_ids.add(question_id)
+                if was_previously_seen and question_id not in previous_visible_question_ids:
+                    answer_key = f"answer_{question_id}"
+                    current_answer = session_state.get(answer_key)
+                    if current_answer is not None:
+                        normalized_answer = current_answer[0] if isinstance(current_answer, tuple) else current_answer
+                        if str(normalized_answer).strip():
+                            draft_responses[question_id] = normalized_answer
+                            session_state[answer_key] = current_answer
+                        else:
+                            draft_responses[question_id] = ""
+                            session_state[answer_key] = ""
+                    else:
+                        draft_responses[question_id] = ""
+                        session_state[answer_key] = ""
+                    protected_question_ids.add(question_id)
+            else:
+                if question_id in previous_visible_question_ids:
+                    draft_responses.pop(question_id, None)
+                    session_state.pop(f"answer_{question_id}", None)
+                    protected_question_ids.discard(question_id)
+
+    session_state["visible_question_ids"] = current_visible_question_ids
+    session_state["previously_seen_question_ids"] = previously_seen_question_ids
+    session_state["protected_question_ids"] = protected_question_ids
 
 
 def sync_widget_state_from_responses(
@@ -123,11 +174,12 @@ def sync_widget_state_from_responses(
     protected = set(protected_question_ids or set())
     for question_id, value in responses.items():
         key = f"answer_{question_id}"
-        if question_id in protected:
-            continue
         if force:
             st.session_state[key] = value
-        elif key not in st.session_state:
+            continue
+        if question_id in protected:
+            continue
+        if key not in st.session_state:
             st.session_state[key] = value
 
 
@@ -420,6 +472,8 @@ def main() -> None:
     # I not empty, sync it to widget state
     else:
         sync_widget_state_from_responses(draft_responses)
+
+    sync_question_visibility_state(pages, design_data, draft_responses, st.session_state)
 
    #--------------------------------------------------
    # Create sidebar
