@@ -48,17 +48,22 @@ def get_repository() -> tuple[Any, bool]:
                 from repository import libsql_available
 
             if not libsql_available():
-                st.warning(f"Turso support is unavailable because the 'libsql-client' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to in-memory data.")
-                return InMemoryRepository(), True
+                st.warning(f"Turso support is unavailable because the 'libsql-client' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite.")
+                return SQLiteRepository(), False
             print("Using Turso repository")
-            return TursoRepository(database_url=database_url, auth_token=auth_token), False
+            try:
+                return TursoRepository(database_url=database_url, auth_token=auth_token), False
+            except Exception as exc:
+                st.warning(f"Unable to connect to Turso; falling back to local SQLite: {exc}")
+                print(f"Unable to connect to Turso; falling back to local SQLite: {exc}")
+                return SQLiteRepository(), False
 
-        print("Turso secrets missing or incomplete; falling back to in-memory repository")
+        print("Turso secrets missing or incomplete; falling back to local SQLite")
     except Exception as e:
-        st.error(f"Secret loading failed: {e}")
-        print(f"Secret loading failed: {e}")
+        st.error(f"Repository initialization failed: {e}")
+        print(f"Repository initialization failed: {e}")
 
-    return InMemoryRepository(), True
+    return SQLiteRepository(), False
 
 
 def value_input(question: dict[str, str], options: list[dict[str, str]], current: str, disabled: bool, draft_responses: dict[str, str]) -> str:
