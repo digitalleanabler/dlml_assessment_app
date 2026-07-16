@@ -39,6 +39,10 @@ def get_repository() -> tuple[Any, bool]:
         turso_config = dict(turso_section)
         database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
         auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
+
+        print(f"Database URL: {database_url}")
+        print(f"Token length: {len(auth_token)}")
+
         print("turso_database_url_present", bool(database_url))
         print("turso_auth_token_present", bool(auth_token))
         if database_url:
