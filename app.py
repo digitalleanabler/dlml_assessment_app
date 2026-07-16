@@ -459,8 +459,26 @@ def main() -> None:
     selected_page = next(page for page in pages if page["PageID"] == selected_page_id)
 
     #--------------------------------------------------
+    # Create main page content
+    if selected_page_id != "review":
+
+        st.subheader(selected_page["PageTitle"])
+        render_question_page(selected_page, design_data, draft_responses, readonly)
+        if not readonly:
+            st.divider()
+            save_clicked = st.button("Save this page", type="primary")
+            if save_clicked:
+                saved_count = save_page_questions(repo, identity["CompanyID"], identity["Email"], selected_page["Questions"], draft_responses)
+                if saved_count:
+                    st.success(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {selected_page['PageTitle']}.")
+                else:
+                    st.info("There are no changed responses to save on this page.")
+        return
+
+    #--------------------------------------------------
     # Create review page
     if selected_page_id == "review":
+
         st.subheader("Review")
         st.caption("Check the readiness of your submission before sending it.")
         for page in pages[:-1]:
@@ -485,21 +503,6 @@ def main() -> None:
                     repo.submit(identity["CompanyID"], identity["Email"])
                     st.rerun()
         return
-    
-    #--------------------------------------------------
-    # Create main page content
-    st.subheader(selected_page["PageTitle"])
-    render_question_page(selected_page, design_data, draft_responses, readonly)
-    if not readonly:
-        st.divider()
-        save_clicked = st.button("Save this page", type="primary")
-        if save_clicked:
-            saved_count = save_page_questions(repo, identity["CompanyID"], identity["Email"], selected_page["Questions"], draft_responses)
-            if saved_count:
-                st.success(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {selected_page['PageTitle']}.")
-            else:
-                st.info("There are no changed responses to save on this page.")
-
 
 if __name__ == "__main__":
     main()
