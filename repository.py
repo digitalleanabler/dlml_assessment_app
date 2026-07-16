@@ -4,12 +4,20 @@
 
 from __future__ import annotations
 
+import sqlite3
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from openpyxl import Workbook, load_workbook
+try:
+    from libsql_client import ClientSync, create_client_sync
+except ImportError:  # pragma: no cover - optional dependency for cloud mode
+    ClientSync = Any  # type: ignore[assignment]
+    create_client_sync = None  # type: ignore[assignment]
+    LIBSQL_IMPORT_ERROR = ImportError("libsql-client is required for TursoRepository. Install it with pip install libsql-client.")
+else:
+    LIBSQL_IMPORT_ERROR = None
 
 
 SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "Responses", "ResponseHistory")
@@ -26,8 +34,12 @@ SHEET_HEADERS = {
 }
 
 
+def default_database_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "db" / "dlmlassessmentdb.sqlite"
+
+
 def default_workbook_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "db" / "dlml_assessment_db.xlsx"
+    return default_database_path()
 
 
 def now() -> str:
@@ -68,69 +80,59 @@ SEED: dict[str, list[dict[str, str]]] = {
 }
 
 
-class ExcelRepository:
-    """Repository backed by the local Excel workbook for local development."""
+class SQLiteRepository:
+    """Repository backed by the local SQLite database for local development."""
 
-    def __init__(self, workbook_path: str | Path | None = None) -> None:
-        self.workbook_path = Path(workbook_path or default_workbook_path()).resolve()
-        self._workbook = self._load_workbook()
+    def __init__(self, database_path: str | Path | None = None) -> None:
+        self.database_path = Path(database_path or default_database_path()).resolve()
+        self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._rows_cache: dict[str, list[dict[str, str]]] = {}
         self._design_cache: dict[str, Any] | None = None
         self._login_cache: dict[str, list[dict[str, str]]] = {}
         self._history_counter = 0
+        self._initialize_schema()
 
-    def _load_workbook(self) -> Any:
-        if self.workbook_path.exists():
-            workbook = load_workbook(self.workbook_path, data_only=False)
-        else:
-            workbook = Workbook()
-            workbook.remove(workbook.active)
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.database_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
+    def _initialize_schema(self) -> None:
+        with self._connect() as conn:
             for sheet_name in SHEETS:
-                worksheet = workbook.create_sheet(title=sheet_name)
                 headers = SHEET_HEADERS.get(sheet_name, [])
-                if headers:
-                    worksheet.append(headers)
-                for row in SEED.get(sheet_name, []):
-                    worksheet.append([row.get(header, "") for header in headers])
-            self.workbook_path.parent.mkdir(parents=True, exist_ok=True)
-            workbook.save(self.workbook_path)
+                if not headers:
+                    continue
+                columns = ", ".join(f'"{header}" TEXT' for header in headers)
+                conn.execute(f'CREATE TABLE IF NOT EXISTS "{sheet_name}" ({columns})')
 
-        for sheet_name in SHEETS:
-            if sheet_name not in workbook.sheetnames:
-                workbook.create_sheet(title=sheet_name)
-            worksheet = workbook[sheet_name]
-            if worksheet.max_row == 0:
+            for sheet_name in SHEETS:
+                existing = conn.execute(f'SELECT COUNT(*) FROM "{sheet_name}"').fetchone()[0]
+                if existing:
+                    continue
                 headers = SHEET_HEADERS.get(sheet_name, [])
-                if headers:
-                    worksheet.append(headers)
-        return workbook
-
-    def _refresh_workbook_from_disk(self) -> None:
-        if not self.workbook_path.exists():
-            return
-        self._workbook = load_workbook(self.workbook_path, data_only=False)
-        self._rows_cache.clear()
-        self._design_cache = None
-        self._login_cache.clear()
-
-    def _sheet_headers(self, worksheet: str) -> list[str]:
-        ws = self._workbook[worksheet]
-        if ws.max_row == 0:
-            return []
-        return ["" if cell is None else str(cell.value) for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+                if not headers:
+                    continue
+                seed_rows = SEED.get(sheet_name, [])
+                if not seed_rows:
+                    continue
+                placeholders = ", ".join("?" for _ in headers)
+                insert_sql = f'INSERT INTO "{sheet_name}" ({", ".join(f'"{header}"' for header in headers)}) VALUES ({placeholders})'
+                for row in seed_rows:
+                    values = [row.get(header, "") for header in headers]
+                    conn.execute(insert_sql, values)
 
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
-        ws = self._workbook[worksheet]
-        headers = self._sheet_headers(worksheet)
-        if not headers:
-            return []
-        rows: list[dict[str, str]] = []
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or all(cell is None or str(cell).strip() == "" for cell in row):
-                continue
-            row_values = ["" if value is None else str(value) for value in row]
-            rows.append({headers[index]: row_values[index] if index < len(row_values) else "" for index in range(len(headers))})
-        return rows
+        with self._connect() as conn:
+            cursor = conn.execute(f'SELECT * FROM "{worksheet}"')
+            rows = []
+            for row in cursor.fetchall():
+                payload = {key: "" if value is None else str(value) for key, value in dict(row).items()}
+                if not payload or all(str(value).strip() == "" for value in payload.values()):
+                    continue
+                rows.append(payload)
+            return rows
 
     def rows(self, worksheet: str) -> list[dict[str, str]]:
         if worksheet in STATIC_TABLES:
@@ -140,7 +142,6 @@ class ExcelRepository:
         return deepcopy(self._rows_for_sheet(worksheet))
 
     def clear_cache(self) -> None:
-        self._refresh_workbook_from_disk()
         self._rows_cache.clear()
         self._design_cache = None
         self._login_cache.clear()
@@ -176,26 +177,15 @@ class ExcelRepository:
         return self._design_cache
 
     def _find_row(self, worksheet: str, predicate) -> tuple[int | None, dict[str, str] | None]:
-        ws = self._workbook[worksheet]
-        headers = self._sheet_headers(worksheet)
-        if not headers:
-            return None, None
-        for row_number, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            if not row or all(cell is None or str(cell).strip() == "" for cell in row):
-                continue
-            row_values = ["" if value is None else str(value) for value in row]
-            payload = {headers[index]: row_values[index] if index < len(row_values) else "" for index in range(len(headers))}
-            if predicate(payload):
-                return row_number, payload
+        rows = self.rows(worksheet)
+        for row_number, row in enumerate(rows, start=1):
+            if predicate(row):
+                return row_number, row
         return None, None
 
     def _write_value(self, worksheet: str, row_number: int, header: str, value: str) -> None:
-        ws = self._workbook[worksheet]
-        headers = self._sheet_headers(worksheet)
-        if header not in headers:
-            return
-        column_index = headers.index(header) + 1
-        ws.cell(row=row_number, column=column_index, value=value)
+        with self._connect() as conn:
+            conn.execute(f'UPDATE "{worksheet}" SET "{header}" = ? WHERE rowid = ?', (value, row_number))
 
     def company(self, company_id: str) -> dict[str, str] | None:
         self.load_login_data()
@@ -214,50 +204,209 @@ class ExcelRepository:
         return {row["QuestionID"]: row["ResponseValue"] for row in self.rows("Responses") if row["CompanyID"] == company_id}
 
     def save_response(self, company_id: str, question_id: str, value: str, email: str) -> bool:
-        row_number, current = self._find_row("Responses", lambda row: row.get("CompanyID") == company_id and row.get("QuestionID") == question_id)
-        old = current.get("ResponseValue", "") if current else ""
-        if old == value:
-            return False
-        stamp = now()
-        sheet = self._workbook["Responses"]
-        headers = self._sheet_headers("Responses")
-        if not headers:
-            headers = SHEET_HEADERS["Responses"]
-            sheet.append(headers)
-        if current and row_number is not None:
-            self._write_value("Responses", row_number, "ResponseValue", value)
-            self._write_value("Responses", row_number, "LastModifiedBy", email)
-            self._write_value("Responses", row_number, "LastModifiedTime", stamp)
-        else:
-            sheet.append([company_id, question_id, value, email, stamp])
-        self._update_company_last_updated(company_id, stamp)
-        self.append_response_history(company_id, question_id, old, value, email, stamp)
-        self._workbook.save(self.workbook_path)
+        with self._connect() as conn:
+            existing = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
+            old = existing[0] if existing else ""
+            if old == value:
+                return False
+            stamp = now()
+            if existing:
+                conn.execute('UPDATE "Responses" SET "ResponseValue" = ?, "LastModifiedBy" = ?, "LastModifiedTime" = ? WHERE "CompanyID" = ? AND "QuestionID" = ?', (value, email, stamp, company_id, question_id))
+            else:
+                conn.execute('INSERT INTO "Responses" ("CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime") VALUES (?, ?, ?, ?, ?)', (company_id, question_id, value, email, stamp))
+            self._update_company_last_updated(company_id, stamp, conn=conn)
+            self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
         self.clear_cache()
         return True
 
-    def _update_company_last_updated(self, company_id: str, stamp: str) -> None:
-        row_number, current = self._find_row("Companies", lambda row: row.get("CompanyID") == company_id)
-        if not current or row_number is None:
-            return
-        self._write_value("Companies", row_number, "LastUpdated", stamp)
+    def _update_company_last_updated(self, company_id: str, stamp: str, conn: sqlite3.Connection | None = None) -> None:
+        connection = conn or self._connect()
+        try:
+            connection.execute('UPDATE "Companies" SET "LastUpdated" = ? WHERE "CompanyID" = ?', (stamp, company_id))
+            if conn is None:
+                connection.commit()
+        finally:
+            if conn is None:
+                connection.close()
 
-    def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str) -> None:
+    def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str, conn: sqlite3.Connection | None = None) -> None:
         self._history_counter += 1
-        history = self._workbook["ResponseHistory"]
-        history.append([f"H{self._history_counter:04}", company_id, question_id, old_value, new_value, email, stamp])
+        next_id = f"H{self._history_counter:04}"
+        connection = conn or self._connect()
+        try:
+            connection.execute('INSERT INTO "ResponseHistory" ("HistoryID", "CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?, ?)', (next_id, company_id, question_id, old_value, new_value, email, stamp))
+            if conn is None:
+                connection.commit()
+        finally:
+            if conn is None:
+                connection.close()
 
     def submit(self, company_id: str, email: str) -> None:
-        row_number, current = self._find_row("Companies", lambda row: row.get("CompanyID") == company_id)
-        if not current or row_number is None:
+        company = self.company(company_id)
+        if company is None:
             raise ValueError("Company does not exist")
         stamp = now()
-        self._write_value("Companies", row_number, "Status", "Submitted")
-        self._write_value("Companies", row_number, "LastUpdated", stamp)
-        self._write_value("Companies", row_number, "SubmittedBy", email)
-        self._write_value("Companies", row_number, "SubmittedTime", stamp)
-        self._workbook.save(self.workbook_path)
+        with self._connect() as conn:
+            conn.execute('UPDATE "Companies" SET "Status" = ?, "LastUpdated" = ?, "SubmittedBy" = ?, "SubmittedTime" = ? WHERE "CompanyID" = ?', ("Submitted", stamp, email, stamp, company_id))
         self.clear_cache()
+
+
+class TursoRepository(SQLiteRepository):
+    """Repository backed by a remote Turso database for cloud deployment."""
+
+    def __init__(self, database_url: str | None = None, auth_token: str | None = None) -> None:
+        self.database_url = database_url or ""
+        self.auth_token = auth_token or ""
+        self._client: ClientSync | None = None
+        self._rows_cache: dict[str, list[dict[str, str]]] = {}
+        self._design_cache: dict[str, Any] | None = None
+        self._login_cache: dict[str, list[dict[str, str]]] = {}
+        self._history_counter = 0
+        self._initialize_schema()
+
+    def _connect(self) -> ClientSync:
+        if self._client is None:
+            if not self.database_url:
+                raise ValueError("Turso database URL is required")
+            self._client = create_client_sync(self.database_url, auth_token=self.auth_token) if self.auth_token else create_client_sync(self.database_url)
+        return self._client
+
+    def _initialize_schema(self) -> None:
+        conn = self._connect()
+        for sheet_name in SHEETS:
+            headers = SHEET_HEADERS.get(sheet_name, [])
+            if not headers:
+                continue
+            columns = ", ".join(f'"{header}" TEXT' for header in headers)
+            conn.execute(f'CREATE TABLE IF NOT EXISTS "{sheet_name}" ({columns})')
+
+        for sheet_name in SHEETS:
+            existing_result = conn.execute(f'SELECT COUNT(*) AS row_count FROM "{sheet_name}"')
+            existing = int(existing_result.rows[0][0]) if getattr(existing_result, "rows", None) else 0
+            if existing:
+                continue
+            headers = SHEET_HEADERS.get(sheet_name, [])
+            if not headers:
+                continue
+            seed_rows = SEED.get(sheet_name, [])
+            if not seed_rows:
+                continue
+            placeholders = ", ".join("?" for _ in headers)
+            insert_sql = f'INSERT INTO "{sheet_name}" ({", ".join(f'"{header}"' for header in headers)}) VALUES ({placeholders})'
+            for row in seed_rows:
+                values = [row.get(header, "") for header in headers]
+                conn.execute(insert_sql, values)
+
+    def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
+        conn = self._connect()
+        result = conn.execute(f'SELECT * FROM "{worksheet}"')
+        rows = []
+        for row in getattr(result, "rows", []) or []:
+            payload = {key: "" if value is None else str(value) for key, value in dict(row).items()}
+            if not payload or all(str(value).strip() == "" for value in payload.values()):
+                continue
+            rows.append(payload)
+        return rows
+
+    def rows(self, worksheet: str) -> list[dict[str, str]]:
+        if worksheet in STATIC_TABLES:
+            if worksheet not in self._rows_cache:
+                self._rows_cache[worksheet] = deepcopy(self._rows_for_sheet(worksheet))
+            return deepcopy(self._rows_cache[worksheet])
+        return deepcopy(self._rows_for_sheet(worksheet))
+
+    def clear_cache(self) -> None:
+        self._rows_cache.clear()
+        self._design_cache = None
+        self._login_cache.clear()
+        self._history_counter = 0
+
+    def load_login_data(self, force: bool = False) -> None:
+        if self._login_cache and not force:
+            return
+        self._login_cache = {
+            "Companies": self.rows("Companies"),
+            "Users": self.rows("Users"),
+        }
+
+    def design_data(self) -> dict[str, Any]:
+        if self._design_cache is None:
+            questions = self.rows("Questions")
+            options_by_question: dict[str, list[dict[str, str]]] = {}
+            conditions_by_question: dict[str, list[dict[str, str]]] = {}
+            for row in self.rows("QuestionOptions"):
+                options_by_question.setdefault(row["QuestionID"], []).append(row)
+            for row in self.rows("QuestionConditions"):
+                conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+            try:
+                pages = self.rows("Pages")
+            except KeyError:
+                pages = []
+            self._design_cache = {
+                "Pages": pages,
+                "Questions": questions,
+                "OptionsByQuestion": options_by_question,
+                "ConditionsByQuestion": conditions_by_question,
+            }
+        return self._design_cache
+
+    def company(self, company_id: str) -> dict[str, str] | None:
+        self.load_login_data()
+        return next((row for row in self._login_cache["Companies"] if row["CompanyID"] == company_id), None)
+
+    def company_by_name(self, company_name: str) -> dict[str, str] | None:
+        self.load_login_data()
+        target = company_name.strip().casefold()
+        return next((row for row in self._login_cache["Companies"] if row["CompanyName"].strip().casefold() == target), None)
+
+    def user(self, email: str, company_id: str) -> dict[str, str] | None:
+        self.load_login_data()
+        return next((row for row in self._login_cache["Users"] if row["Email"].lower() == email.lower() and row["CompanyID"] == company_id), None)
+
+    def responses_for(self, company_id: str) -> dict[str, str]:
+        return {row["QuestionID"]: row["ResponseValue"] for row in self.rows("Responses") if row["CompanyID"] == company_id}
+
+    def save_response(self, company_id: str, question_id: str, value: str, email: str) -> bool:
+        conn = self._connect()
+        existing_result = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id))
+        existing = existing_result.rows[0][0] if getattr(existing_result, "rows", None) else None
+        old = existing or ""
+        if old == value:
+            return False
+        stamp = now()
+        if existing is not None:
+            conn.execute('UPDATE "Responses" SET "ResponseValue" = ?, "LastModifiedBy" = ?, "LastModifiedTime" = ? WHERE "CompanyID" = ? AND "QuestionID" = ?', (value, email, stamp, company_id, question_id))
+        else:
+            conn.execute('INSERT INTO "Responses" ("CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime") VALUES (?, ?, ?, ?, ?)', (company_id, question_id, value, email, stamp))
+        self._update_company_last_updated(company_id, stamp, conn=conn)
+        self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
+        self.clear_cache()
+        return True
+
+    def _update_company_last_updated(self, company_id: str, stamp: str, conn: ClientSync | None = None) -> None:
+        connection = conn or self._connect()
+        connection.execute('UPDATE "Companies" SET "LastUpdated" = ? WHERE "CompanyID" = ?', (stamp, company_id))
+
+    def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str, conn: ClientSync | None = None) -> None:
+        self._history_counter += 1
+        next_id = f"H{self._history_counter:04}"
+        connection = conn or self._connect()
+        connection.execute('INSERT INTO "ResponseHistory" ("HistoryID", "CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?, ?)', (next_id, company_id, question_id, old_value, new_value, email, stamp))
+
+    def submit(self, company_id: str, email: str) -> None:
+        company = self.company(company_id)
+        if company is None:
+            raise ValueError("Company does not exist")
+        stamp = now()
+        conn = self._connect()
+        conn.execute('UPDATE "Companies" SET "Status" = ?, "LastUpdated" = ?, "SubmittedBy" = ?, "SubmittedTime" = ? WHERE "CompanyID" = ?', ("Submitted", stamp, email, stamp, company_id))
+        self.clear_cache()
+
+
+class ExcelRepository(SQLiteRepository):
+    """Backward-compatible alias for the SQLite-backed repository."""
+
+    pass
 
 
 class InMemoryRepository:

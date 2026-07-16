@@ -1,6 +1,6 @@
 # DLML Collaborative Assessment
 
-Streamlit proof of concept for a company-shared, data-driven survey. The Google Spreadsheet is the source of truth for survey configuration, users, current responses, and response history.
+Streamlit proof of concept for a company-shared, data-driven survey. The local SQLite database is the default source of truth for survey configuration, users, current responses, and response history.
 
 ## Run locally
 
@@ -21,7 +21,7 @@ Without secrets the app starts in **developer demo mode**, seeded with two compa
 3. Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and replace the placeholders with the downloaded service-account JSON fields.
 4. Keep `secrets.toml` out of source control. On a host, enter the same values in its secret manager.
 
-The workbook must have these exact worksheets and header rows: `Companies`, `Users`, `Questions`, `QuestionOptions`, `QuestionConditions`, `Responses`, and `ResponseHistory`. The column names must match `database design r01.docx`.
+The SQLite database file is stored at `db/dlmlassessmentdb.sqlite` and uses tables named `Companies`, `Users`, `Questions`, `QuestionOptions`, `QuestionConditions`, `Responses`, and `ResponseHistory`. The column names are aligned with the database design.
 
 ## Behaviour implemented
 
@@ -34,4 +34,4 @@ The workbook must have these exact worksheets and header rows: `Companies`, `Use
 
 ## Google sign-in
 
-The current app checks the manually entered company name and email against the `Companies` and `Users` worksheets before access is granted. Before public deployment, replace manual email entry with a Google OAuth sign-in flow and use the authenticated email to perform the same `repo.user(email, company_id)` authorisation check. The Sheets service account is for backend access; it does not sign users in.
+The current app checks the manually entered company name and email against the `Companies` and `Users` tables before access is granted. Before public deployment, replace manual email entry with a Google OAuth sign-in flow and use the authenticated email to perform the same `repo.user(email, company_id)` authorisation check. The Sheets service account remains an optional production integration; it does not sign users in.

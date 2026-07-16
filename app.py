@@ -7,10 +7,10 @@ import streamlit as st
 
 try:
     from .condition_engine import is_question_visible
-    from .repository import ExcelRepository, GoogleSheetsRepository, InMemoryRepository
+    from .repository import InMemoryRepository, SQLiteRepository, TursoRepository
 except ImportError:  # pragma: no cover - support running app.py directly
     from condition_engine import is_question_visible
-    from repository import ExcelRepository, GoogleSheetsRepository, InMemoryRepository
+    from repository import InMemoryRepository, SQLiteRepository, TursoRepository
 
 
 st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layout="centered")
@@ -26,36 +26,29 @@ def get_repository() -> tuple[Any, bool]:
     # If app_env is "local"
     if app_env == "local":
         try:
-            print("Using Excel workbook repository")
-            return ExcelRepository(), False
+            print("Using SQLite repository")
+            return SQLiteRepository(), False
         except Exception as exc:
-            st.warning(f"Unable to load local workbook database: {exc}")
-            print(f"Unable to load local workbook database: {exc}")
+            st.warning(f"Unable to load local SQLite database: {exc}")
+            print(f"Unable to load local SQLite database: {exc}")
             return InMemoryRepository(), True
     
     # If app_env is not "local"
     try:
-        service_account_obj = st.secrets.get("gcp_service_account", {})
-        service_account = dict(service_account_obj)
-        print("service_account_keys", sorted(service_account.keys()))
+        turso_section = st.secrets.get("turso", {})
+        turso_config = dict(turso_section)
+        database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
+        auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
+        print("turso_database_url_present", bool(database_url))
+        print("turso_auth_token_present", bool(auth_token))
+        if database_url:
+            if not getattr(TursoRepository, "libsql_available", False):
+                st.warning("Turso support is unavailable because the 'libsql-client' package is not installed. Falling back to in-memory data.")
+                return InMemoryRepository(), True
+            print("Using Turso repository")
+            return TursoRepository(database_url=database_url, auth_token=auth_token), False
 
-        sheet_id = str(st.secrets.get("spreadsheet_id", "") or "")
-        if not sheet_id:
-            general_section = st.secrets.get("general", None)
-            if general_section is not None and hasattr(general_section, "get"):
-                sheet_id = str(general_section.get("spreadsheet_id", "") or "")
-
-        sheet_id = sheet_id.strip()
-        print("sheet_id_present", bool(sheet_id))
-        print("service_account_present", bool(service_account))
-        if service_account and sheet_id:
-            print(f"Using Google Sheets repository with sheet_id={sheet_id}")
-            return GoogleSheetsRepository.from_service_account(service_account, sheet_id), False
-
-        # If fail to load google sheets
-        print("Google Sheets secrets missing or incomplete; falling back to in-memory repository")
-    
-    # If fail to load google sheets
+        print("Turso secrets missing or incomplete; falling back to in-memory repository")
     except Exception as e:
         st.error(f"Secret loading failed: {e}")
         print(f"Secret loading failed: {e}")
