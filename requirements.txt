@@ -1,5 +1,5 @@
 streamlit>=1.57,<2
 gspread>=6.0,<7
 google-auth>=2.0,<3
-libsql-client>=0.3,<0.4
-
+libsql==0.1.11
+libsql-client==0.3.1
