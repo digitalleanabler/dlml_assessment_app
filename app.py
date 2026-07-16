@@ -19,7 +19,11 @@ st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layo
 @st.cache_resource
 def get_repository() -> tuple[Any, bool]:
     print("Loading repository...")
+
+    # Load environment variable to determine which repository to use
     app_env = (os.getenv("app_env") or "").strip().lower()
+
+    # If app_env is "local"
     if app_env == "local":
         try:
             print("Using Excel workbook repository")
@@ -28,7 +32,8 @@ def get_repository() -> tuple[Any, bool]:
             st.warning(f"Unable to load local workbook database: {exc}")
             print(f"Unable to load local workbook database: {exc}")
             return InMemoryRepository(), True
-
+    
+    # If app_env is not "local"
     try:
         service_account_obj = st.secrets.get("gcp_service_account", {})
         service_account = dict(service_account_obj)
@@ -47,7 +52,10 @@ def get_repository() -> tuple[Any, bool]:
             print(f"Using Google Sheets repository with sheet_id={sheet_id}")
             return GoogleSheetsRepository.from_service_account(service_account, sheet_id), False
 
+        # If fail to load google sheets
         print("Google Sheets secrets missing or incomplete; falling back to in-memory repository")
+    
+    # If fail to load google sheets
     except Exception as e:
         st.error(f"Secret loading failed: {e}")
         print(f"Secret loading failed: {e}")
@@ -333,9 +341,16 @@ def render_question_page(page: dict[str, Any], design_data: dict[str, Any], draf
 
 def main() -> None:
     st.session_state.setdefault("identity", None)
-    repo, demo_mode = get_repository()
-    if demo_mode:
-        st.warning("Developer demo mode: using in-memory seed data. Configure Google Sheets secrets for shared persistence.")
+
+    # Get data from repository     
+    #repo, demo_mode = get_repository()  # remove this repo to reduce unnecessary data loading
+
+    # If entering demo mode, printout a message
+    #if demo_mode:
+    #   st.warning("Developer demo mode: using in-memory seed data. Configure Google Sheets secrets for shared persistence.")
+
+    ####################################################################################################
+    # If not logged in, create login page
 
     if st.session_state.identity is None:
         st.title("DLM Lifecycle Assessment")
@@ -344,12 +359,15 @@ def main() -> None:
             company_id = st.text_input("Company ID")
             email = st.text_input("Email address", placeholder="name@gmail.com")
             submitted = st.form_submit_button("Continue", type="primary")
+        
+        # If login form is submitted, attempt to authenticate
         if submitted:
             cleaned_company_id = company_id.strip()
             cleaned_email = email.strip().lower()
             if not cleaned_company_id or not cleaned_email:
                 st.warning("Enter both your Company ID and Email address.")
             else:
+                repo, demo_mode = get_repository()   # NEW
                 company, user = authenticate(repo, cleaned_company_id, cleaned_email)
                 if not user:
                     st.warning("We couldn't verify your Company ID and Email Address. Please check your details and try again. If the problem persists, contact your Project Administrator.")
@@ -357,17 +375,28 @@ def main() -> None:
                     clear_answer_widgets()
                     st.session_state.identity = {**user, "CompanyName": company["CompanyName"]}
                     st.rerun()
+
         st.info("Use the Company ID provided by your Project Administrator and the Email Address you registered with the project. If you do not have a Company ID, please contact your Project Administrator before proceeding.")
         return
-
+    
+    ####################################################################################################
+    # If already logged in
+    
+    # Prepare data
     identity = st.session_state.identity
+    repo, demo_mode = get_repository()   # NEW
     company = repo.company(identity["CompanyID"])
     assert company
+
+    # Set readonly tag if company already submitted the form
     readonly = company["Status"] == "Submitted"
+
+    #--------------------------------------------------
+    # Create main page header
     st.title("DLM Lifecycle Assessment")
     st.caption(f"{identity['CompanyName']} · Signed in as {identity['Name']} ({identity['Email']})")
     if st.button("Reload shared survey"):
-        repo.clear_cache()
+        repo.clear_cache() # if click, cache cleared and where do we reload the repo??? !!!
         current_page_id = st.session_state.get("active_page_id", None)
         page_drafts = st.session_state.setdefault("page_draft_responses", {})
         reload_page_responses(repo, identity["CompanyID"], page_drafts, st.session_state, force=True)
@@ -381,12 +410,19 @@ def main() -> None:
     design_data = repo.design_data()
     pages = build_page_structure(design_data)
     all_questions = [question for page in pages[:-1] for question in page["Questions"]]
+    
+    # Create draft responses
     draft_responses = st.session_state.setdefault("page_draft_responses", {})
+
+    # If empty, sync it to the repository responses
     if not draft_responses:
         sync_draft_responses(repo, identity["CompanyID"], draft_responses)
+    # I not empty, sync it to widget state
     else:
         sync_widget_state_from_responses(draft_responses)
 
+   #--------------------------------------------------
+   # Create sidebar
     with st.sidebar:
         st.subheader("Pages")
         page_options = [page["PageID"] for page in pages]
@@ -422,6 +458,8 @@ def main() -> None:
 
     selected_page = next(page for page in pages if page["PageID"] == selected_page_id)
 
+    #--------------------------------------------------
+    # Create review page
     if selected_page_id == "review":
         st.subheader("Review")
         st.caption("Check the readiness of your submission before sending it.")
@@ -447,7 +485,9 @@ def main() -> None:
                     repo.submit(identity["CompanyID"], identity["Email"])
                     st.rerun()
         return
-
+    
+    #--------------------------------------------------
+    # Create main page content
     st.subheader(selected_page["PageTitle"])
     render_question_page(selected_page, design_data, draft_responses, readonly)
     if not readonly:
