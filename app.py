@@ -7,10 +7,10 @@ import streamlit as st
 
 try:
     from .condition_engine import is_question_visible
-    from .repository import InMemoryRepository, SQLiteRepository, TursoRepository
+    from .repository import InMemoryRepository, SQLiteRepository, TursoRepository, LIBSQL_IMPORT_ERROR
 except ImportError:  # pragma: no cover - support running app.py directly
     from condition_engine import is_question_visible
-    from repository import InMemoryRepository, SQLiteRepository, TursoRepository
+    from repository import InMemoryRepository, SQLiteRepository, TursoRepository, LIBSQL_IMPORT_ERROR
 
 
 st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layout="centered")
@@ -42,8 +42,13 @@ def get_repository() -> tuple[Any, bool]:
         print("turso_database_url_present", bool(database_url))
         print("turso_auth_token_present", bool(auth_token))
         if database_url:
-            if not getattr(TursoRepository, "libsql_available", False):
-                st.warning("Turso support is unavailable because the 'libsql-client' package is not installed. Falling back to in-memory data.")
+            try:
+                from .repository import libsql_available
+            except ImportError:  # pragma: no cover - support running app.py directly
+                from repository import libsql_available
+
+            if not libsql_available():
+                st.warning(f"Turso support is unavailable because the 'libsql-client' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to in-memory data.")
                 return InMemoryRepository(), True
             print("Using Turso repository")
             return TursoRepository(database_url=database_url, auth_token=auth_token), False

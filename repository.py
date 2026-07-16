@@ -12,12 +12,16 @@ from typing import Any
 
 try:
     from libsql_client import ClientSync, create_client_sync
-except ImportError:  # pragma: no cover - optional dependency for cloud mode
+except Exception as exc:  # pragma: no cover - optional dependency for cloud mode
     ClientSync = Any  # type: ignore[assignment]
     create_client_sync = None  # type: ignore[assignment]
-    LIBSQL_IMPORT_ERROR = ImportError("libsql-client is required for TursoRepository. Install it with pip install libsql-client.")
+    LIBSQL_IMPORT_ERROR = exc
 else:
     LIBSQL_IMPORT_ERROR = None
+
+
+def libsql_available() -> bool:
+    return create_client_sync is not None
 
 
 SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "Responses", "ResponseHistory")
@@ -255,6 +259,8 @@ class TursoRepository(SQLiteRepository):
     """Repository backed by a remote Turso database for cloud deployment."""
 
     def __init__(self, database_url: str | None = None, auth_token: str | None = None) -> None:
+        if not libsql_available():
+            raise RuntimeError("TursoRepository requires the 'libsql-client' package.") from LIBSQL_IMPORT_ERROR
         self.database_url = database_url or ""
         self.auth_token = auth_token or ""
         self._client: ClientSync | None = None
