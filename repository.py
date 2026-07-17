@@ -29,7 +29,7 @@ SHEET_HEADERS = {
     "Companies": ["CompanyID", "CompanyName", "Status", "LastUpdated", "SubmittedBy", "SubmittedTime"],
     "Users": ["Email", "Name", "CompanyID"],
     "Pages": ["PageID", "PageTitle"],
-    "Questions": ["QuestionID", "PageID", "Sequence", "QuestionText", "AnswerType", "Required", "Active"],
+    "Questions": ["QuestionID", "PageID", "Sequence", "QuestionText", "AnswerType", "Required", "Active", "Visible"],
     "QuestionOptions": ["OptionID", "QuestionID", "DisplayOrder", "OptionValue", "DisplayText"],
     "QuestionConditions": ["LogicID", "QuestionID", "Seq", "LeftParen", "DependsOnQuestion", "Operator", "ExpectedValue", "RightParen", "LogicalWithNext"],
     "Responses": ["CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime"],

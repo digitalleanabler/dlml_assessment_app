@@ -22,8 +22,8 @@ def get_repository() -> tuple[Any, bool]:
 
     # Load environment variable to determine which repository to use
     app_env = (os.getenv("app_env") or "").strip().lower()
-    st.info(f"app_env: {app_env}")
-    print(f"app_env: {app_env}")
+    #st.info(f"app_env: {app_env}")
+    #print(f"app_env: {app_env}")
 
     # If app_env is "local"
     if app_env == "local":
@@ -35,7 +35,6 @@ def get_repository() -> tuple[Any, bool]:
             print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
             return InMemoryRepository(), True
     else:
-        #st.warning(f"Unrecognized app_env '{app_env}'. Using Turso repository instead.")
         print(f"Unrecognized app_env '{app_env}'. Using Turso repository instead.")
 
     # If app_env is not 'local' (e.g. 'local1', or '' (cloud deployment)), attempt to load Turso repository
@@ -68,16 +67,11 @@ def get_repository() -> tuple[Any, bool]:
 
         st.error("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
         print("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
-        #return InMemoryRepository(), True
     
     except Exception as e:
         st.error(f"Turso repository initialization failed: {e}. Using temporary in-memory data instead.")
         print(f"Repository initialization failed: {e}. Using temporary in-memory data instead.")
-        #return InMemoryRepository(), True
     
-    # If app_env is not set or unrecognized, default to in-memory repository
-    #st.warning("Environment variable 'app_env' is not set or unrecognized. Using temporary in-memory data instead.")
-    #print("Environment variable 'app_env' is not set or unrecognized. Using temporary in-memory data instead.")
     return InMemoryRepository(), True
 
 
