@@ -26,45 +26,54 @@ def get_repository() -> tuple[Any, bool]:
     # If app_env is "local"
     if app_env == "local":
         try:
-            print("Using SQLite repository")
+            print("Loading local SQLite repository")
             return SQLiteRepository(), False
         except Exception as exc:
-            st.warning(f"Unable to load local SQLite database: {exc}")
-            print(f"Unable to load local SQLite database: {exc}")
+            st.warning(f"Unable to load local SQLite repository. Using temporary in-memory data instead: {exc}")
+            print(f"Unable to load local SQLite repository. Using temporary in-memory data instead: {exc}")
             return InMemoryRepository(), True
     
-    # If app_env is not "local"
-    try:
-        turso_section = st.secrets.get("turso", {})
-        turso_config = dict(turso_section)
-        database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
-        auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
+    # If app_env is "cloud"
+    if app_env == "cloud":
+        try:
+            print("Loading Turso repository")
+            turso_section = st.secrets.get("turso", {})
+            turso_config = dict(turso_section)
+            database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
+            auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
 
-        print("turso_database_url_present", bool(database_url))
-        print("turso_auth_token_present", bool(auth_token))
-        if database_url:
-            try:
-                from .repository import libsql_available
-            except ImportError:  # pragma: no cover - support running app.py directly
-                from repository import libsql_available
+            print("turso_database_url_present", bool(database_url))
+            print("turso_auth_token_present", bool(auth_token))
+            if database_url:
+                try:
+                    from .repository import libsql_available
+                except ImportError:  # pragma: no cover - support running app.py directly
+                    from repository import libsql_available
+                
+                if not libsql_available():
+                    st.error(f"Turso support is unavailable because the 'libsql' package is not installed. Using temporary in-memory data instead: {LIBSQL_IMPORT_ERROR}")
+                    print(f"Turso support is unavailable because the 'libsql' package is not installed. Using temporary in-memory data instead: {LIBSQL_IMPORT_ERROR}")
+                    return InMemoryRepository(), True
+                
+                try:
+                    return TursoRepository(database_url=database_url, auth_token=auth_token), False
+                except Exception as exc:
+                    st.error(f"Unable to connect to Turso. Using temporary in-memory data instead: {exc}")
+                    print(f"Unable to connect to Turso; using in-memory data: {exc}")
+                    return InMemoryRepository(), True
 
-            if not libsql_available():
-                st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead.")
-                return InMemoryRepository(), True
-            print("Using Turso repository")
-            try:
-                return TursoRepository(database_url=database_url, auth_token=auth_token), False
-            except Exception as exc:
-                st.error(f"Unable to connect to Turso. Using temporary in-memory data instead: {exc}")
-                print(f"Unable to connect to Turso; using in-memory data: {exc}")
-                return InMemoryRepository(), True
-
-        st.error("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
-        print("Turso secrets missing or incomplete; using in-memory data")
-    except Exception as e:
-        st.error(f"Turso repository initialization failed. Using temporary in-memory data instead: {e}")
-        print(f"Repository initialization failed: {e}")
-
+            st.error("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
+            print("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
+            return InMemoryRepository(), True
+        
+        except Exception as e:
+            st.error(f"Turso repository initialization failed. Using temporary in-memory data instead: {e}")
+            print(f"Repository initialization failed. Using temporary in-memory data instead: {e}")
+            return InMemoryRepository(), True
+    
+    # If app_env is not set or unrecognized, default to in-memory repository
+    st.warning("Environment variable 'app_env' is not set or unrecognized. Using temporary in-memory data instead.")
+    print("Environment variable 'app_env' is not set or unrecognized. Using temporary in-memory data instead.")
     return InMemoryRepository(), True
 
 
@@ -399,9 +408,6 @@ def render_question_page(page: dict[str, Any], design_data: dict[str, Any], draf
 def main() -> None:
     st.session_state.setdefault("identity", None)
 
-    # Get data from repository     
-    #repo, demo_mode = get_repository()  # remove this repo to reduce unnecessary data loading
-
     ####################################################################################################
     # If not logged in, create login page
 
@@ -411,7 +417,7 @@ def main() -> None:
         with st.form("sign_in"):
             company_id = st.text_input("Company ID")
             email = st.text_input("Email address", placeholder="name@gmail.com")
-            submitted = st.form_submit_button("Continue", type="primary")
+            submitted = st.form_submit_button("Enter", type="primary")
         
         # If login form is submitted, attempt to authenticate
         if submitted:
