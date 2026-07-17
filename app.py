@@ -402,10 +402,6 @@ def main() -> None:
     # Get data from repository     
     #repo, demo_mode = get_repository()  # remove this repo to reduce unnecessary data loading
 
-    # If entering demo mode, printout a message
-    #if demo_mode:
-    #   st.warning("Developer demo mode: using in-memory seed data. Configure Google Sheets secrets for shared persistence.")
-
     ####################################################################################################
     # If not logged in, create login page
 

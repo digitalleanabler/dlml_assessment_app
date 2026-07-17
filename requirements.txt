@@ -1,4 +1,2 @@
 streamlit>=1.57,<2
-gspread>=6.0,<7
-google-auth>=2.0,<3
 libsql==0.1.11

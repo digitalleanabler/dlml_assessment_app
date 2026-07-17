@@ -15,7 +15,7 @@ from .app import (
     render_question_page,
     main,
 )
-from .repository import ExcelRepository, GoogleSheetsRepository, InMemoryRepository, SQLiteRepository, TursoRepository
+from .repository import ExcelRepository, InMemoryRepository, SQLiteRepository, TursoRepository
 
 __all__ = [
     "authenticate",
@@ -34,7 +34,6 @@ __all__ = [
     "render_question_page",
     "main",
     "ExcelRepository",
-    "GoogleSheetsRepository",
     "InMemoryRepository",
     "SQLiteRepository",
     "TursoRepository",
