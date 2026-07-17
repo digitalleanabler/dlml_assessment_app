@@ -35,7 +35,7 @@ def get_repository() -> tuple[Any, bool]:
             print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
             return InMemoryRepository(), True
     else:
-        st.warning(f"Unrecognized app_env '{app_env}'. Using Turso repository instead.")
+        #st.warning(f"Unrecognized app_env '{app_env}'. Using Turso repository instead.")
         print(f"Unrecognized app_env '{app_env}'. Using Turso repository instead.")
 
     # If app_env is not 'local' (e.g. 'local1', or '' (cloud deployment)), attempt to load Turso repository
