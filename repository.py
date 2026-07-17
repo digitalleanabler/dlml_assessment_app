@@ -10,6 +10,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import streamlit as st
+
+
+#############################################################################################################
+# Testing parameters for local SQLite database
+
+local_db_name = 'dlmlassessmentdb_01a.sqlite'
+
+#############################################################################################################
+
+
 try:
     import libsql
 except Exception as exc:  # pragma: no cover - optional dependency for cloud mode
@@ -38,11 +49,13 @@ SHEET_HEADERS = {
 
 
 def default_database_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "db" / "dlmlassessmentdb.sqlite"
+    #return Path(__file__).resolve().parent.parent / "db" / "dlmlassessmentdb.sqlite" !!!
+    local_db_path = Path(__file__).resolve().parent.parent / "db" / local_db_name
+    st.info(f"Using database path: {local_db_path}")
+    return local_db_path
 
-
-def default_workbook_path() -> Path:
-    return default_database_path()
+#def default_workbook_path() -> Path: !!!
+#    return default_database_path()
 
 
 def now() -> str:
