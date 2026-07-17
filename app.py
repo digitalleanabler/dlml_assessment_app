@@ -40,9 +40,6 @@ def get_repository() -> tuple[Any, bool]:
         database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
         auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
 
-        print(f"Database URL: {database_url}")
-        print(f"Token length: {len(auth_token)}")
-
         print("turso_database_url_present", bool(database_url))
         print("turso_auth_token_present", bool(auth_token))
         if database_url:
@@ -52,22 +49,23 @@ def get_repository() -> tuple[Any, bool]:
                 from repository import libsql_available
 
             if not libsql_available():
-                st.warning(f"Turso support is unavailable because the 'libsql-client' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite.")
-                return SQLiteRepository(), False
+                st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead.")
+                return InMemoryRepository(), True
             print("Using Turso repository")
             try:
                 return TursoRepository(database_url=database_url, auth_token=auth_token), False
             except Exception as exc:
-                st.warning(f"Unable to connect to Turso; falling back to local SQLite: {exc}")
-                print(f"Unable to connect to Turso; falling back to local SQLite: {exc}")
-                return SQLiteRepository(), False
+                st.error(f"Unable to connect to Turso. Using temporary in-memory data instead: {exc}")
+                print(f"Unable to connect to Turso; using in-memory data: {exc}")
+                return InMemoryRepository(), True
 
-        print("Turso secrets missing or incomplete; falling back to local SQLite")
+        st.error("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
+        print("Turso secrets missing or incomplete; using in-memory data")
     except Exception as e:
-        st.error(f"Repository initialization failed: {e}")
+        st.error(f"Turso repository initialization failed. Using temporary in-memory data instead: {e}")
         print(f"Repository initialization failed: {e}")
 
-    return SQLiteRepository(), False
+    return InMemoryRepository(), True
 
 
 def value_input(question: dict[str, str], options: list[dict[str, str]], current: str, disabled: bool, draft_responses: dict[str, str]) -> str:

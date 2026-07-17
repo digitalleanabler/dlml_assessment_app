@@ -11,17 +11,16 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from libsql_client import ClientSync, create_client_sync
+    import libsql
 except Exception as exc:  # pragma: no cover - optional dependency for cloud mode
-    ClientSync = Any  # type: ignore[assignment]
-    create_client_sync = None  # type: ignore[assignment]
+    libsql = None  # type: ignore[assignment]
     LIBSQL_IMPORT_ERROR = exc
 else:
     LIBSQL_IMPORT_ERROR = None
 
 
 def libsql_available() -> bool:
-    return create_client_sync is not None
+    return libsql is not None
 
 
 SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "Responses", "ResponseHistory")
@@ -260,22 +259,24 @@ class TursoRepository(SQLiteRepository):
 
     def __init__(self, database_url: str | None = None, auth_token: str | None = None) -> None:
         if not libsql_available():
-            raise RuntimeError("TursoRepository requires the 'libsql-client' package.") from LIBSQL_IMPORT_ERROR
+            raise RuntimeError("TursoRepository requires the 'libsql' package.") from LIBSQL_IMPORT_ERROR
         self.database_url = database_url or ""
         self.auth_token = auth_token or ""
-        self._client: ClientSync | None = None
+        self._connection: Any | None = None
         self._rows_cache: dict[str, list[dict[str, str]]] = {}
         self._design_cache: dict[str, Any] | None = None
         self._login_cache: dict[str, list[dict[str, str]]] = {}
         self._history_counter = 0
         self._initialize_schema()
 
-    def _connect(self) -> ClientSync:
-        if self._client is None:
+    def _connect(self) -> Any:
+        if self._connection is None:
             if not self.database_url:
                 raise ValueError("Turso database URL is required")
-            self._client = create_client_sync(self.database_url, auth_token=self.auth_token) if self.auth_token else create_client_sync(self.database_url)
-        return self._client
+            if not self.auth_token:
+                raise ValueError("Turso authentication token is required")
+            self._connection = libsql.connect(self.database_url, auth_token=self.auth_token)
+        return self._connection
 
     def _initialize_schema(self) -> None:
         conn = self._connect()
@@ -287,8 +288,7 @@ class TursoRepository(SQLiteRepository):
             conn.execute(f'CREATE TABLE IF NOT EXISTS "{sheet_name}" ({columns})')
 
         for sheet_name in SHEETS:
-            existing_result = conn.execute(f'SELECT COUNT(*) AS row_count FROM "{sheet_name}"')
-            existing = int(existing_result.rows[0][0]) if getattr(existing_result, "rows", None) else 0
+            existing = int(conn.execute(f'SELECT COUNT(*) FROM "{sheet_name}"').fetchone()[0])
             if existing:
                 continue
             headers = SHEET_HEADERS.get(sheet_name, [])
@@ -302,13 +302,15 @@ class TursoRepository(SQLiteRepository):
             for row in seed_rows:
                 values = [row.get(header, "") for header in headers]
                 conn.execute(insert_sql, values)
+        conn.commit()
 
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
         conn = self._connect()
-        result = conn.execute(f'SELECT * FROM "{worksheet}"')
+        cursor = conn.execute(f'SELECT * FROM "{worksheet}"')
+        columns = [column[0] for column in cursor.description or []]
         rows = []
-        for row in getattr(result, "rows", []) or []:
-            payload = {key: "" if value is None else str(value) for key, value in dict(row).items()}
+        for row in cursor.fetchall():
+            payload = {key: "" if value is None else str(value) for key, value in zip(columns, row)}
             if not payload or all(str(value).strip() == "" for value in payload.values()):
                 continue
             rows.append(payload)
@@ -374,8 +376,8 @@ class TursoRepository(SQLiteRepository):
 
     def save_response(self, company_id: str, question_id: str, value: str, email: str) -> bool:
         conn = self._connect()
-        existing_result = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id))
-        existing = existing_result.rows[0][0] if getattr(existing_result, "rows", None) else None
+        existing_row = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
+        existing = existing_row[0] if existing_row else None
         old = existing or ""
         if old == value:
             return False
@@ -386,14 +388,15 @@ class TursoRepository(SQLiteRepository):
             conn.execute('INSERT INTO "Responses" ("CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime") VALUES (?, ?, ?, ?, ?)', (company_id, question_id, value, email, stamp))
         self._update_company_last_updated(company_id, stamp, conn=conn)
         self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
+        conn.commit()
         self.clear_cache()
         return True
 
-    def _update_company_last_updated(self, company_id: str, stamp: str, conn: ClientSync | None = None) -> None:
+    def _update_company_last_updated(self, company_id: str, stamp: str, conn: Any | None = None) -> None:
         connection = conn or self._connect()
         connection.execute('UPDATE "Companies" SET "LastUpdated" = ? WHERE "CompanyID" = ?', (stamp, company_id))
 
-    def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str, conn: ClientSync | None = None) -> None:
+    def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str, conn: Any | None = None) -> None:
         self._history_counter += 1
         next_id = f"H{self._history_counter:04}"
         connection = conn or self._connect()
@@ -406,6 +409,7 @@ class TursoRepository(SQLiteRepository):
         stamp = now()
         conn = self._connect()
         conn.execute('UPDATE "Companies" SET "Status" = ?, "LastUpdated" = ?, "SubmittedBy" = ?, "SubmittedTime" = ? WHERE "CompanyID" = ?', ("Submitted", stamp, email, stamp, company_id))
+        conn.commit()
         self.clear_cache()
 
 
