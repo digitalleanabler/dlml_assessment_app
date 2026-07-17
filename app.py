@@ -22,6 +22,8 @@ def get_repository() -> tuple[Any, bool]:
 
     # Load environment variable to determine which repository to use
     app_env = (os.getenv("app_env") or "").strip().lower()
+    st.info(f"app_env: {app_env}")
+    print(f"app_env: {app_env}")
 
     # If app_env is "local"
     if app_env == "local":
