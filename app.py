@@ -22,19 +22,25 @@ def get_repository() -> tuple[Any, bool]:
 
     # Load environment variable to determine which repository to use
     app_env = (os.getenv("app_env") or "").strip().lower()
+    st.info(f"app_env: {app_env}")
+    print(f"app_env: {app_env}")
 
     # If app_env is "local"
     if app_env == "local":
         try:
-            print("Using SQLite repository")
+            print("Loading local SQLite repository")
             return SQLiteRepository(), False
         except Exception as exc:
-            st.warning(f"Unable to load local SQLite database: {exc}")
-            print(f"Unable to load local SQLite database: {exc}")
+            st.warning(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead.")
+            print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
             return InMemoryRepository(), True
-    
-    # If app_env is not "local"
+    else:
+        st.warning(f"Unrecognized app_env '{app_env}'. Using Turso repository instead.")
+        print(f"Unrecognized app_env '{app_env}'. Using Turso repository instead.")
+
+    # If app_env is not 'local' (e.g. 'local1', or '' (cloud deployment)), attempt to load Turso repository
     try:
+        print("Loading Turso repository")
         turso_section = st.secrets.get("turso", {})
         turso_config = dict(turso_section)
         database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
@@ -47,24 +53,31 @@ def get_repository() -> tuple[Any, bool]:
                 from .repository import libsql_available
             except ImportError:  # pragma: no cover - support running app.py directly
                 from repository import libsql_available
-
+            
             if not libsql_available():
                 st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead.")
+                print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead.")
                 return InMemoryRepository(), True
-            print("Using Turso repository")
+            
             try:
                 return TursoRepository(database_url=database_url, auth_token=auth_token), False
             except Exception as exc:
-                st.error(f"Unable to connect to Turso. Using temporary in-memory data instead: {exc}")
-                print(f"Unable to connect to Turso; using in-memory data: {exc}")
+                st.error(f"Unable to connect to Turso: {exc}. Using temporary in-memory data instead.")
+                print(f"Unable to connect to Turso: {exc}. Using temporary in-memory data instead.")
                 return InMemoryRepository(), True
 
         st.error("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
-        print("Turso secrets missing or incomplete; using in-memory data")
+        print("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
+        #return InMemoryRepository(), True
+    
     except Exception as e:
-        st.error(f"Turso repository initialization failed. Using temporary in-memory data instead: {e}")
-        print(f"Repository initialization failed: {e}")
-
+        st.error(f"Turso repository initialization failed: {e}. Using temporary in-memory data instead.")
+        print(f"Repository initialization failed: {e}. Using temporary in-memory data instead.")
+        #return InMemoryRepository(), True
+    
+    # If app_env is not set or unrecognized, default to in-memory repository
+    #st.warning("Environment variable 'app_env' is not set or unrecognized. Using temporary in-memory data instead.")
+    #print("Environment variable 'app_env' is not set or unrecognized. Using temporary in-memory data instead.")
     return InMemoryRepository(), True
 
 
@@ -399,9 +412,6 @@ def render_question_page(page: dict[str, Any], design_data: dict[str, Any], draf
 def main() -> None:
     st.session_state.setdefault("identity", None)
 
-    # Get data from repository     
-    #repo, demo_mode = get_repository()  # remove this repo to reduce unnecessary data loading
-
     ####################################################################################################
     # If not logged in, create login page
 
@@ -411,7 +421,7 @@ def main() -> None:
         with st.form("sign_in"):
             company_id = st.text_input("Company ID")
             email = st.text_input("Email address", placeholder="name@gmail.com")
-            submitted = st.form_submit_button("Continue", type="primary")
+            submitted = st.form_submit_button("Enter", type="primary")
         
         # If login form is submitted, attempt to authenticate
         if submitted:
