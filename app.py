@@ -39,6 +39,9 @@ def get_repository() -> tuple[Any, bool]:
         print(f"Unrecognized app_env '{app_env}'. Using temporary in-memory data instead.")
         
         is_cloud = os.getenv("STREAMLIT_RUNTIME") is not None
+        st.info(f"is_cloud: {is_cloud}")
+        print(f"is_cloud: {is_cloud}")
+
         if is_cloud:
             st.info("Running in Streamlit Cloud environment.")
             print("Running in Streamlit Cloud environment.")
