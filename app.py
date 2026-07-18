@@ -370,6 +370,19 @@ def reload_page_responses_for_page(
     return draft_responses
 
 
+def reload_responses_for_navigation(
+    repo: Any,
+    company_id: str,
+    draft_responses: dict[str, str],
+    session_state: dict[str, Any],
+    selected_page_id: str,
+    questions: list[dict[str, str]],
+) -> dict[str, str]:
+    if selected_page_id == "review":
+        return reload_page_responses(repo, company_id, draft_responses, session_state, force=True)
+    return reload_page_responses_for_page(repo, company_id, draft_responses, session_state, questions)
+
+
 def save_page_questions(repo: Any, company_id: str, email: str, questions: list[dict[str, str]], draft_responses: dict[str, str]) -> int:
     existing = dict(st.session_state.get("saved_responses", {}))
     saved_count = 0
@@ -503,7 +516,7 @@ def main() -> None:
                 if saved_count:
                     st.toast(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {page_titles[previous_page_id]}.")
             selected_page_questions = [page for page in pages if page["PageID"] == selected_page_id][0]["Questions"]
-            reload_page_responses_for_page(repo, identity["CompanyID"], draft_responses, st.session_state, selected_page_questions)
+            reload_responses_for_navigation(repo, identity["CompanyID"], draft_responses, st.session_state, selected_page_id, selected_page_questions)
         st.session_state["active_page_id"] = selected_page_id
 
         st.divider()

@@ -6,6 +6,7 @@ from app.app import (
     get_page_readiness,
     reload_page_responses,
     reload_page_responses_for_page,
+    reload_responses_for_navigation,
     sync_draft_responses,
     sync_question_visibility_state,
     sync_widget_state_from_responses,
@@ -202,6 +203,24 @@ def test_reload_page_responses_for_page_refreshes_only_destination_page_question
 
     assert reloaded["Q001"] == "local-value"
     assert reloaded["Q002"] == "saved-other"
+
+
+def test_review_navigation_refreshes_all_responses_from_repository():
+    class DummyRepo:
+        def clear_cache(self):
+            return None
+
+        def responses_for(self, company_id: str):
+            return {"Q001": "repo-value", "Q002": "repo-other"}
+
+    draft_responses = {"Q001": "local-value"}
+    state = {"saved_responses": {"Q001": "saved-value"}}
+
+    reloaded = reload_responses_for_navigation(DummyRepo(), "C001", draft_responses, state, "review", [])
+
+    assert reloaded["Q001"] == "repo-value"
+    assert reloaded["Q002"] == "repo-other"
+    assert state["responses_cache"]["Q002"] == "repo-other"
 
 
 def test_sync_widget_state_preserves_existing_user_input_by_default():
