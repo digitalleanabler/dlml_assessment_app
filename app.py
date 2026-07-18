@@ -483,7 +483,7 @@ def main() -> None:
             if not cleaned_company_id or not cleaned_email:
                 st.warning("Enter both your Company ID and Email address.")
             else:
-                repo, demo_mode = get_repository()   # NEW
+                repo, demo_mode = get_repository()
                 repo, demo_mode = ensure_repository(repo, st.secrets)
                 try:
                     company, user = authenticate(repo, cleaned_company_id, cleaned_email)
@@ -508,7 +508,7 @@ def main() -> None:
     
     # Prepare data
     identity = st.session_state.identity
-    repo, demo_mode = get_repository()   # NEW
+    repo, demo_mode = get_repository()
     repo, demo_mode = ensure_repository(repo, st.secrets)
     try:
         company = repo.company(identity["CompanyID"])
@@ -520,7 +520,6 @@ def main() -> None:
 
     # Set readonly tag if company already submitted the form
     readonly = company["Status"] == "Submitted"
-
 
     #--------------------------------------------------
     # Create main page header

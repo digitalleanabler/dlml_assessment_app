@@ -12,15 +12,6 @@ from typing import Any
 
 import streamlit as st
 
-
-#############################################################################################################
-# Testing parameters for local SQLite database
-
-#local_db_name = 'dlmlassessmentdb_01a.sqlite'
-
-#############################################################################################################
-
-
 try:
     import libsql
 except Exception as exc:  # pragma: no cover - optional dependency for cloud mode
@@ -50,12 +41,10 @@ SHEET_HEADERS = {
 
 def default_database_path() -> Path:
     return Path(__file__).resolve().parent.parent / "db" / "dlmlassessmentdb.sqlite"
-    #local_db_path = Path(__file__).resolve().parent.parent / "db" / local_db_name
-    #st.info(f"Using database path: {local_db_path}")
-    #return local_db_path
 
-#def default_workbook_path() -> Path: !!!
-#    return default_database_path()
+
+def default_workbook_path() -> Path:
+    return default_database_path()
 
 
 def now() -> str:
@@ -82,9 +71,9 @@ SEED: dict[str, list[dict[str, str]]] = {
         {"PageID": "P002", "PageTitle": "Business Objectives"},
     ],
     "Questions": [
-        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "Describe your company's products", "AnswerType": "Text", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
-        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "Lean implementation level", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
-        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "Is TPM implemented?", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
+        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "Describe your products?", "AnswerType": "Text", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
+        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "Lean implementation level?", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
+        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "TPM implemented?", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
     ],
     "QuestionOptions": [
         {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "None"},
