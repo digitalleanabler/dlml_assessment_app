@@ -327,7 +327,12 @@ class TursoRepository(SQLiteRepository):
                 raise ValueError("Turso database URL is required")
             if not self.auth_token:
                 raise ValueError("Turso authentication token is required")
-            self._connection = libsql.connect(self.database_url, auth_token=self.auth_token)
+            try:
+                self._connection = libsql.connect(self.database_url, auth_token=self.auth_token)
+            except BaseException as exc:
+                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                    raise
+                raise RuntimeError(f"Failed to connect to Turso: {exc}") from exc
         return self._connection
 
     def _initialize_schema(self) -> None:
@@ -358,7 +363,12 @@ class TursoRepository(SQLiteRepository):
 
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
         conn = self._connect()
-        cursor = conn.execute(f'SELECT * FROM "{worksheet}"')
+        try:
+            cursor = conn.execute(f'SELECT * FROM "{worksheet}"')
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            raise RuntimeError(f"Failed to query Turso worksheet '{worksheet}': {exc}") from exc
         columns = [column[0] for column in cursor.description or []]
         rows = []
         for row in cursor.fetchall():

@@ -17,7 +17,8 @@ st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layo
 
 
 def select_repository(app_env: str | None = None, secrets: Any | None = None) -> tuple[Any, bool]:
-    resolved_env = (app_env or os.getenv("app_env") or "").strip().lower()
+    general_section = secrets.get("general", {}) if secrets is not None else {}
+    resolved_env = (app_env or os.getenv("app_env") or str(general_section.get("app_env", "")) or "").strip().lower()
 
     if resolved_env == "local":
         try:
@@ -41,19 +42,24 @@ def select_repository(app_env: str | None = None, secrets: Any | None = None) ->
             from repository import libsql_available
 
         if not libsql_available():
-            st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite repository.")
-            print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite repository.")
+            st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead.")
+            print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead")
+            if resolved_env in {"turso", "cloud"}:
+                return InMemoryRepository(), True
         else:
             try:
                 repo = TursoRepository(database_url=database_url, auth_token=auth_token)
                 repo.rows("Companies")
                 return repo, False
             except Exception as exc:
-                st.error(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
-                print(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
+                st.error(f"Unable to connect to Turso: {exc}. Using temporary in-memory data instead.")
+                print(f"Unable to connect to Turso: {exc}. Using temporary in-memory data instead")
+                if resolved_env in {"turso", "cloud"}:
+                    return InMemoryRepository(), True
 
     if resolved_env in {"turso", "cloud"}:
-        st.info("Cloud mode is enabled, but Turso credentials were not available. Falling back to local SQLite repository for this session.")
+        st.info("Cloud mode is enabled, but Turso credentials were not available or usable. Using temporary in-memory data instead for this session.")
+        return InMemoryRepository(), True
 
     try:
         print("Loading local SQLite repository")
@@ -451,7 +457,9 @@ def main() -> None:
                 repo, demo_mode = get_repository()   # NEW
                 try:
                     company, user = authenticate(repo, cleaned_company_id, cleaned_email)
-                except Exception:
+                except BaseException as exc:  # pragma: no cover - handle runtime panics from libsql
+                    if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                        raise
                     repo, demo_mode = select_repository("local", st.secrets)
                     company, user = authenticate(repo, cleaned_company_id, cleaned_email)
                 if not user:
