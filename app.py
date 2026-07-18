@@ -341,8 +341,6 @@ def merge_responses_with_repository(current: dict[str, str], refreshed: dict[str
 
 
 def sync_draft_responses(repo: Any, company_id: str, draft_responses: dict[str, str]) -> dict[str, str]:
-    if hasattr(repo, "clear_cache"):
-        repo.clear_cache()
     refreshed = dict(repo.responses_for(company_id))
     saved = dict(st.session_state.get("saved_responses", {}))
     protected_question_ids = set(st.session_state.get("protected_question_ids", set()))
@@ -357,8 +355,6 @@ def sync_draft_responses(repo: Any, company_id: str, draft_responses: dict[str, 
 
 
 def reload_page_responses(repo: Any, company_id: str, draft_responses: dict[str, str], session_state: dict[str, Any], *, force: bool = False) -> dict[str, str]:
-    if hasattr(repo, "clear_cache"):
-        repo.clear_cache()
     refreshed = dict(repo.responses_for(company_id))
     saved = dict(session_state.get("saved_responses", {}))
     protected_question_ids = set(session_state.get("protected_question_ids", set()))
@@ -384,8 +380,6 @@ def reload_page_responses_for_page(
     session_state: dict[str, Any],
     questions: list[dict[str, str]],
 ) -> dict[str, str]:
-    if hasattr(repo, "clear_cache"):
-        repo.clear_cache()
     refreshed = dict(repo.responses_for(company_id))
     saved = dict(session_state.get("saved_responses", {}))
     protected_question_ids = set(session_state.get("protected_question_ids", set()))
@@ -439,6 +433,12 @@ def save_page_questions(repo: Any, company_id: str, email: str, questions: list[
         if str(existing.get(question_id, "")) != str(value):
             repo.save_response(company_id, question_id, value, email)
             saved_count += 1
+    if saved_count and hasattr(repo, "refresh_question_visibility"):
+        try:
+            repo.refresh_question_visibility(company_id, draft_responses)
+        except Exception as exc:
+            print(f"Failed to refresh question visibility after save: {exc}")
+
     st.session_state["responses_cache"] = dict(draft_responses)
     st.session_state["page_draft_responses"] = dict(draft_responses)
     st.session_state["saved_responses"] = dict(draft_responses)
@@ -550,7 +550,6 @@ def main() -> None:
     else:
         sync_widget_state_from_responses(draft_responses)
 
-    repo.refresh_question_visibility(identity["CompanyID"], draft_responses)
     sync_question_visibility_state(pages, design_data, draft_responses, st.session_state)
 
    #--------------------------------------------------

@@ -246,7 +246,7 @@ class SQLiteRepository:
             self._update_company_last_updated(company_id, stamp, conn=conn)
             self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
         self.clear_cache()
-        self.refresh_question_visibility(company_id, self.responses_for(company_id))
+
         return True
 
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
@@ -472,7 +472,7 @@ class TursoRepository(SQLiteRepository):
         self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
         conn.commit()
         self.clear_cache()
-        self.refresh_question_visibility(company_id, self.responses_for(company_id))
+
         return True
 
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
@@ -629,7 +629,6 @@ class GoogleSheetsRepository:
         self.append_response_history(company_id, question_id, old if rows is not None else "", value, email, now())
         self._rows_cache.pop("Companies", None)
         self._login_cache.clear()
-        self.refresh_question_visibility(company_id, self.responses_for(company_id))
         return True
 
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
@@ -780,7 +779,6 @@ class InMemoryRepository:
             self.rows("Responses").append({"CompanyID": company_id, "QuestionID": question_id, "ResponseValue": value, "LastModifiedBy": email, "LastModifiedTime": stamp})
         self.append_response_history(company_id, question_id, old, value, email, stamp)
         self.clear_cache()
-        self.refresh_question_visibility(company_id, self.responses_for(company_id))
         return True
 
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
