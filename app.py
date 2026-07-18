@@ -16,17 +16,10 @@ except ImportError:  # pragma: no cover - support running app.py directly
 st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layout="centered")
 
 
-@st.cache_resource
-def get_repository() -> tuple[Any, bool]:
-    print("Loading repository...")
+def select_repository(app_env: str | None = None, secrets: Any | None = None) -> tuple[Any, bool]:
+    resolved_env = (app_env or os.getenv("app_env") or "").strip().lower()
 
-    # Load environment variable to determine which repository to use
-    app_env = (os.getenv("app_env") or "").strip().lower()
-    #st.info(f"app_env: {app_env}")
-    #print(f"app_env: {app_env}")
-
-    # If app_env is "local"
-    if app_env == "local":
+    if resolved_env == "local":
         try:
             print("Loading local SQLite repository")
             return SQLiteRepository(), False
@@ -34,45 +27,57 @@ def get_repository() -> tuple[Any, bool]:
             st.warning(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead.")
             print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
             return InMemoryRepository(), True
-    else:
-        print(f"Unrecognized app_env '{app_env}'. Using Turso repository instead.")
 
-    # If app_env is not 'local' (e.g. 'local1', or '' (cloud deployment)), attempt to load Turso repository
+    if resolved_env in {"turso", "cloud"}:
+        try:
+            print("Loading Turso repository")
+            turso_section = secrets.get("turso", {}) if secrets is not None else {}
+            turso_config = dict(turso_section)
+            database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
+            auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
+
+            print("turso_database_url_present", bool(database_url))
+            print("turso_auth_token_present", bool(auth_token))
+            if database_url:
+                try:
+                    from .repository import libsql_available
+                except ImportError:  # pragma: no cover - support running app.py directly
+                    from repository import libsql_available
+
+                if not libsql_available():
+                    st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using local SQLite repository instead.")
+                    print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using local SQLite repository instead.")
+                else:
+                    try:
+                        return TursoRepository(database_url=database_url, auth_token=auth_token), False
+                    except Exception as exc:
+                        st.error(f"Unable to connect to Turso: {exc}. Using local SQLite repository instead.")
+                        print(f"Unable to connect to Turso: {exc}. Using local SQLite repository instead.")
+            else:
+                st.error("Turso credentials are missing or incomplete. Using local SQLite repository instead.")
+                print("Turso credentials are missing or incomplete. Using local SQLite repository instead.")
+        except Exception as exc:
+            st.error(f"Turso repository initialization failed: {exc}. Using local SQLite repository instead.")
+            print(f"Repository initialization failed: {exc}. Using local SQLite repository instead.")
+
     try:
-        print("Loading Turso repository")
-        turso_section = st.secrets.get("turso", {})
-        turso_config = dict(turso_section)
-        database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
-        auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
+        print("Loading local SQLite repository")
+        return SQLiteRepository(), False
+    except Exception as exc:
+        st.warning(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead.")
+        print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
+        return InMemoryRepository(), True
 
-        print("turso_database_url_present", bool(database_url))
-        print("turso_auth_token_present", bool(auth_token))
-        if database_url:
-            try:
-                from .repository import libsql_available
-            except ImportError:  # pragma: no cover - support running app.py directly
-                from repository import libsql_available
-            
-            if not libsql_available():
-                st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead.")
-                print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead.")
-                return InMemoryRepository(), True
-            
-            try:
-                return TursoRepository(database_url=database_url, auth_token=auth_token), False
-            except Exception as exc:
-                st.error(f"Unable to connect to Turso: {exc}. Using temporary in-memory data instead.")
-                print(f"Unable to connect to Turso: {exc}. Using temporary in-memory data instead.")
-                return InMemoryRepository(), True
 
-        st.error("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
-        print("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
-    
-    except Exception as e:
-        st.error(f"Turso repository initialization failed: {e}. Using temporary in-memory data instead.")
-        print(f"Repository initialization failed: {e}. Using temporary in-memory data instead.")
-    
-    return InMemoryRepository(), True
+@st.cache_resource
+def get_repository() -> tuple[Any, bool]:
+    print("Loading repository...")
+    try:
+        return select_repository(secrets=st.secrets)
+    except Exception as exc:
+        st.error(f"Repository initialization failed: {exc}. Using temporary in-memory data instead.")
+        print(f"Repository initialization failed: {exc}. Using temporary in-memory data instead.")
+        return InMemoryRepository(), True
 
 
 def value_input(question: dict[str, str], options: list[dict[str, str]], current: str, disabled: bool, draft_responses: dict[str, str]) -> str:
