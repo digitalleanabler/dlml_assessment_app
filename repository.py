@@ -53,45 +53,45 @@ def now() -> str:
 
 SEED: dict[str, list[dict[str, str]]] = {
     "Companies": [
-        {"CompanyID": "C001", "CompanyName": "SWAT in Dream", "Status": "Draft", "LastUpdated": "deac@gmail.com",  "SubmittedBy": "", "SubmittedTime": ""},
-        {"CompanyID": "C002", "CompanyName": "LAFD in Dream", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
+        {"CompanyID": "C001", "CompanyName": "SWAT in DreamXXX", "Status": "Draft", "LastUpdated": "deac@gmail.com",  "SubmittedBy": "", "SubmittedTime": ""},
+        {"CompanyID": "C002", "CompanyName": "LAFD in DreamXXX", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
     ],
     "Users": [
-        {"Email": "tonytanakorn@gmail.com", "Name": "Tony", "CompanyID": "C001"},
-        {"Email": "digitalleanabler@gmail.com", "Name": "Leanabler", "CompanyID": "C001"},
-        {"Email": "hondo@gmail.com", "Name": "Hondo", "CompanyID": "C001"},
-        {"Email": "deac@gmail.com", "Name": "Deacon", "CompanyID": "C001"},
-        {"Email": "tanakorn.tan@nectec.or.th", "Name": "Tanakorn", "CompanyID": "C002"},
-        {"Email": "toneiam@gmail.com", "Name": "Eiam", "CompanyID": "C002"},
-        {"Email": "bobby@gmail.com", "Name": "Bobby", "CompanyID": "C002"},
-        {"Email": "buck@gmail.com", "Name": "Buck", "CompanyID": "C002"},
+        {"Email": "tonytanakorn@gmail.com", "Name": "TonyXXX", "CompanyID": "C001"},
+        {"Email": "digitalleanabler@gmail.com", "Name": "LeanablerXXX", "CompanyID": "C001"},
+        {"Email": "hondo@gmail.com", "Name": "HondoXXX", "CompanyID": "C001"},
+        {"Email": "deac@gmail.com", "Name": "DeaconXXX", "CompanyID": "C001"},
+        {"Email": "tanakorn.tan@nectec.or.th", "Name": "TanakornXXX", "CompanyID": "C002"},
+        {"Email": "toneiam@gmail.com", "Name": "EiamXXX", "CompanyID": "C002"},
+        {"Email": "bobby@gmail.com", "Name": "BobbyXXX", "CompanyID": "C002"},
+        {"Email": "buck@gmail.com", "Name": "BuckXXX", "CompanyID": "C002"},
     ],
     "Pages": [
-        {"PageID": "P001", "PageTitle": "Business Goal"},
-        {"PageID": "P002", "PageTitle": "Business Objectives"},
+        {"PageID": "P001", "PageTitle": "Business GoalXXX"},
+        {"PageID": "P002", "PageTitle": "Business ObjectivesXXX"},
     ],
     "Questions": [
-        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "Describe your products?", "AnswerType": "Text", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
-        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "Lean implementation level?", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
-        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "TPM implemented?", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
+        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "Describe your products?XXX", "AnswerType": "Text", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
+        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "Lean implementation level?XXX", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
+        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "TPM implemented?XXX", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
     ],
     "QuestionOptions": [
-        {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "None"},
-        {"OptionID": "O002B", "QuestionID": "Q002", "DisplayOrder": "2", "OptionValue": "SOME", "DisplayText": "Some"},
-        {"OptionID": "O002C", "QuestionID": "Q002", "DisplayOrder": "3", "OptionValue": "ALL", "DisplayText": "All"},
-        {"OptionID": "O003A", "QuestionID": "Q003", "DisplayOrder": "1", "OptionValue": "NO", "DisplayText": "No"},
-        {"OptionID": "O003B", "QuestionID": "Q003", "DisplayOrder": "2", "OptionValue": "YES", "DisplayText": "Yes"},
+        {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "NoneXXX"},
+        {"OptionID": "O002B", "QuestionID": "Q002", "DisplayOrder": "2", "OptionValue": "SOME", "DisplayText": "SomeXXX"},
+        {"OptionID": "O002C", "QuestionID": "Q002", "DisplayOrder": "3", "OptionValue": "ALL", "DisplayText": "AllXXX"},
+        {"OptionID": "O003A", "QuestionID": "Q003", "DisplayOrder": "1", "OptionValue": "NO", "DisplayText": "NoXXX"},
+        {"OptionID": "O003B", "QuestionID": "Q003", "DisplayOrder": "2", "OptionValue": "YES", "DisplayText": "YesXXX"},
     ],
     "QuestionConditions": [
         {"LogicID": "L001", "QuestionID": "Q003", "Seq": "1", "LeftParen": "", "DependsOnQuestion": "Q002", "Operator": "=", "ExpectedValue": "ALL", "RightParen": "", "LogicalWithNext": "END"},
     ],
     "Responses": [
-        {"CompanyID": "C001", "QuestionID": "Q001", "ResponseValue": "Cars", "LastModifiedBy": "digitalleanabler@gmail.com", "LastModifiedTime": "2026-07-15 22:56:47 +0700"},
+        {"CompanyID": "C001", "QuestionID": "Q001", "ResponseValue": "CarsXXX", "LastModifiedBy": "digitalleanabler@gmail.com", "LastModifiedTime": "2026-07-15 22:56:47 +0700"},
         {"CompanyID": "C001", "QuestionID": "Q002", "ResponseValue": "ALL", "LastModifiedBy": "hondo@gmail.com", "LastModifiedTime": "2026-07-15 22:57:47 +0700"},
         {"CompanyID": "C001", "QuestionID": "Q003", "ResponseValue": "YES", "LastModifiedBy": "deac@gmail.com", "LastModifiedTime": "2026-07-15 22:58:47 +0700"}
     ],
     "ResponseHistory": [
-        {"HistoryID": "H001", "CompanyID": "C001", "QuestionID": "Q001", "OldValue": "", "NewValue": "Cars", "ModifiedBy": "digitalleanabler@gmail.com", "ModifiedTime": "2026-07-15 22:56:47 +0700"},
+        {"HistoryID": "H001", "CompanyID": "C001", "QuestionID": "Q001", "OldValue": "", "NewValue": "CarsXXX", "ModifiedBy": "digitalleanabler@gmail.com", "ModifiedTime": "2026-07-15 22:56:47 +0700"},
         {"HistoryID": "H002", "CompanyID": "C001", "QuestionID": "Q002", "OldValue": "", "NewValue": "ALL", "ModifiedBy": "hondo@gmail.com", "ModifiedTime": "2026-07-15 22:57:47 +0700"},
         {"HistoryID": "H003", "CompanyID": "C001", "QuestionID": "Q003", "OldValue": "", "NewValue": "YES", "ModifiedBy": "deac@gmail.com", "ModifiedTime": "2026-07-15 22:58:47 +0700"},
     ],
@@ -128,6 +128,8 @@ class SQLiteRepository:
             for sheet_name in SHEETS:
                 existing = conn.execute(f'SELECT COUNT(*) FROM "{sheet_name}"').fetchone()[0]
                 if existing:
+                    continue
+                if sheet_name in {"Responses", "ResponseHistory"}:
                     continue
                 headers = SHEET_HEADERS.get(sheet_name, [])
                 if not headers:
@@ -349,6 +351,8 @@ class TursoRepository(SQLiteRepository):
         for sheet_name in SHEETS:
             existing = int(conn.execute(f'SELECT COUNT(*) FROM "{sheet_name}"').fetchone()[0])
             if existing:
+                continue
+            if sheet_name in {"Responses", "ResponseHistory"}:
                 continue
             headers = SHEET_HEADERS.get(sheet_name, [])
             if not headers:
