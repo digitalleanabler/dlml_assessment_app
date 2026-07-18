@@ -45,7 +45,9 @@ def select_repository(app_env: str | None = None, secrets: Any | None = None) ->
             print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite repository.")
         else:
             try:
-                return TursoRepository(database_url=database_url, auth_token=auth_token), False
+                repo = TursoRepository(database_url=database_url, auth_token=auth_token)
+                repo.rows("Companies")
+                return repo, False
             except Exception as exc:
                 st.error(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
                 print(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
@@ -201,11 +203,15 @@ def sync_widget_state_from_responses(
 
 
 def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, Any | None]:
-    if hasattr(repo, "load_login_data"):
-        repo.load_login_data(force=True)
-    company = repo.company(company_id) if hasattr(repo, "company") else None
-    user = repo.user(email, company["CompanyID"]) if company else None
-    return company, user
+    try:
+        if hasattr(repo, "load_login_data"):
+            repo.load_login_data(force=True)
+        company = repo.company(company_id) if hasattr(repo, "company") else None
+        user = repo.user(email, company["CompanyID"]) if company else None
+        return company, user
+    except Exception as exc:
+        print(f"Repository authentication failed: {exc}")
+        raise
 
 
 def get_cached_responses(repo: Any, company_id: str, session_state: dict[str, Any]) -> dict[str, str]:
@@ -443,7 +449,11 @@ def main() -> None:
                 st.warning("Enter both your Company ID and Email address.")
             else:
                 repo, demo_mode = get_repository()   # NEW
-                company, user = authenticate(repo, cleaned_company_id, cleaned_email)
+                try:
+                    company, user = authenticate(repo, cleaned_company_id, cleaned_email)
+                except Exception:
+                    repo, demo_mode = select_repository("local", st.secrets)
+                    company, user = authenticate(repo, cleaned_company_id, cleaned_email)
                 if not user:
                     st.warning("We couldn't verify your Company ID and Email Address. Please check your details and try again. If the problem persists, contact your Project Administrator.")
                 else:
@@ -460,7 +470,11 @@ def main() -> None:
     # Prepare data
     identity = st.session_state.identity
     repo, demo_mode = get_repository()   # NEW
-    company = repo.company(identity["CompanyID"])
+    try:
+        company = repo.company(identity["CompanyID"])
+    except Exception:
+        repo, demo_mode = select_repository("local", st.secrets)
+        company = repo.company(identity["CompanyID"])
     assert company
 
     # Set readonly tag if company already submitted the form
