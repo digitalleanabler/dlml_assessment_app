@@ -246,7 +246,33 @@ class SQLiteRepository:
             self._update_company_last_updated(company_id, stamp, conn=conn)
             self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
         self.clear_cache()
+        self.refresh_question_visibility(company_id, self.responses_for(company_id))
         return True
+
+    def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
+        try:
+            from .condition_engine import is_question_visible
+        except ImportError:  # pragma: no cover - support running module directly
+            from condition_engine import is_question_visible
+
+        current_responses = dict(responses or self.responses_for(company_id))
+        questions = self.rows("Questions")
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        with self._connect() as conn:
+            for question in questions:
+                question_id = str(question.get("QuestionID", "") or "").strip()
+                if not question_id:
+                    continue
+                visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+                visible_value = "TRUE" if visible else "FALSE"
+                conn.execute('UPDATE "Questions" SET "Visible" = ? WHERE "QuestionID" = ?', (visible_value, question_id))
+
+        self._design_cache = None
+        self.clear_cache()
+        return current_responses
 
     def _update_company_last_updated(self, company_id: str, stamp: str, conn: sqlite3.Connection | None = None) -> None:
         connection = conn or self._connect()
@@ -416,7 +442,37 @@ class TursoRepository(SQLiteRepository):
         self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
         conn.commit()
         self.clear_cache()
+        self.refresh_question_visibility(company_id, self.responses_for(company_id))
         return True
+
+    def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
+        try:
+            from .condition_engine import is_question_visible
+        except ImportError:  # pragma: no cover - support running module directly
+            from condition_engine import is_question_visible
+
+        current_responses = dict(responses or self.responses_for(company_id))
+        questions = self.rows("Questions")
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        conn = self._connect()
+        try:
+            for question in questions:
+                question_id = str(question.get("QuestionID", "") or "").strip()
+                if not question_id:
+                    continue
+                visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+                visible_value = "TRUE" if visible else "FALSE"
+                conn.execute('UPDATE "Questions" SET "Visible" = ? WHERE "QuestionID" = ?', (visible_value, question_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+        self._design_cache = None
+        self.clear_cache()
+        return current_responses
 
     def _update_company_last_updated(self, company_id: str, stamp: str, conn: Any | None = None) -> None:
         connection = conn or self._connect()
@@ -436,6 +492,175 @@ class TursoRepository(SQLiteRepository):
         conn = self._connect()
         conn.execute('UPDATE "Companies" SET "Status" = ?, "LastUpdated" = ?, "SubmittedBy" = ?, "SubmittedTime" = ? WHERE "CompanyID" = ?', ("Submitted", stamp, email, stamp, company_id))
         conn.commit()
+        self.clear_cache()
+
+
+class GoogleSheetsRepository:
+    """Minimal Google Sheets-compatible repository used by the tests and local compatibility paths."""
+
+    def __init__(self, spreadsheet: Any) -> None:
+        self.spreadsheet = spreadsheet
+        self._rows_cache: dict[str, list[dict[str, str]]] = {}
+        self._design_cache: dict[str, Any] | None = None
+        self._login_cache: dict[str, list[dict[str, str]]] = {}
+        self._history_counter = 0
+
+    def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
+        try:
+            sheet = self.spreadsheet.worksheet(worksheet)
+        except KeyError:
+            return []
+        rows = sheet.get_all_records(default_blank="") if hasattr(sheet, "get_all_records") else []
+        return [{key: "" if value is None else str(value) for key, value in row.items()} for row in rows]
+
+    def rows(self, worksheet: str) -> list[dict[str, str]]:
+        if worksheet not in self._rows_cache:
+            self._rows_cache[worksheet] = deepcopy(self._rows_for_sheet(worksheet))
+        return deepcopy(self._rows_cache[worksheet])
+
+    def clear_cache(self) -> None:
+        self._rows_cache.clear()
+        self._design_cache = None
+        self._login_cache.clear()
+        self._history_counter = 0
+
+    def load_login_data(self, force: bool = False) -> None:
+        if self._login_cache and not force:
+            return
+        self._login_cache = {
+            "Companies": self.rows("Companies"),
+            "Users": self.rows("Users"),
+        }
+        if force:
+            self._rows_cache.pop("Companies", None)
+            self._rows_cache.pop("Users", None)
+            self._login_cache = {
+                "Companies": self.rows("Companies"),
+                "Users": self.rows("Users"),
+            }
+
+    def design_data(self) -> dict[str, Any]:
+        if self._design_cache is None:
+            questions = self.rows("Questions")
+            options_by_question: dict[str, list[dict[str, str]]] = {}
+            conditions_by_question: dict[str, list[dict[str, str]]] = {}
+            for row in self.rows("QuestionOptions"):
+                options_by_question.setdefault(row["QuestionID"], []).append(row)
+            for row in self.rows("QuestionConditions"):
+                conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+            pages = self.rows("Pages") if "Pages" in self.spreadsheet.worksheets else []
+            self._design_cache = {
+                "Pages": pages,
+                "Questions": questions,
+                "OptionsByQuestion": options_by_question,
+                "ConditionsByQuestion": conditions_by_question,
+            }
+        return self._design_cache
+
+    def company(self, company_id: str) -> dict[str, str] | None:
+        self.load_login_data()
+        company_rows = self._login_cache.get("Companies", [])
+        if company_rows:
+            return next((row for row in company_rows if row["CompanyID"] == company_id), None)
+        try:
+            worksheet = self.spreadsheet.worksheet("Companies")
+            rows = getattr(worksheet, "rows", None)
+            if rows is not None:
+                return next((row for row in rows if row.get("CompanyID") == company_id), None)
+        except KeyError:
+            return None
+        return None
+
+    def company_by_name(self, company_name: str) -> dict[str, str] | None:
+        self.load_login_data()
+        target = company_name.strip().casefold()
+        return next((row for row in self._login_cache["Companies"] if row["CompanyName"].strip().casefold() == target), None)
+
+    def user(self, email: str, company_id: str) -> dict[str, str] | None:
+        self.load_login_data()
+        return next((row for row in self._login_cache["Users"] if row["Email"].lower() == email.lower() and row["CompanyID"] == company_id), None)
+
+    def responses_for(self, company_id: str) -> dict[str, str]:
+        return {row["QuestionID"]: row["ResponseValue"] for row in self.rows("Responses") if row["CompanyID"] == company_id}
+
+    def save_response(self, company_id: str, question_id: str, value: str, email: str) -> bool:
+        worksheet = self.spreadsheet.worksheet("Responses")
+        rows = getattr(worksheet, "rows", None)
+        if rows is not None:
+            existing = next((row for row in rows if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
+            old = existing.get("ResponseValue", "") if existing else ""
+            if old == value:
+                return False
+            if existing is not None:
+                existing.update({"ResponseValue": value, "LastModifiedBy": email, "LastModifiedTime": now()})
+            else:
+                rows.append({"CompanyID": company_id, "QuestionID": question_id, "ResponseValue": value, "LastModifiedBy": email, "LastModifiedTime": now()})
+        self._update_company_last_updated(company_id, now())
+        self.append_response_history(company_id, question_id, old if rows is not None else "", value, email, now())
+        self._rows_cache.pop("Companies", None)
+        self._login_cache.clear()
+        self.refresh_question_visibility(company_id, self.responses_for(company_id))
+        return True
+
+    def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
+        try:
+            from .condition_engine import is_question_visible
+        except ImportError:  # pragma: no cover - support running module directly
+            from condition_engine import is_question_visible
+
+        current_responses = dict(responses or self.responses_for(company_id))
+        questions = self.rows("Questions")
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        for question in questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+            visible_value = "TRUE" if visible else "FALSE"
+            question["Visible"] = visible_value
+
+        self._design_cache = None
+        self.clear_cache()
+        return current_responses
+
+    def _update_company_last_updated(self, company_id: str, stamp: str) -> None:
+        worksheet = self.spreadsheet.worksheet("Companies")
+        if hasattr(worksheet, "rows"):
+            company_row = next((row for row in worksheet.rows if row.get("CompanyID") == company_id), None)
+            if company_row is not None:
+                company_row.update({"LastUpdated": stamp, "SubmittedBy": company_row.get("SubmittedBy", ""), "SubmittedTime": company_row.get("SubmittedTime", "")})
+                headers = getattr(worksheet, "headers", SHEET_HEADERS["Companies"])
+                if hasattr(worksheet, "update"):
+                    worksheet.update("A1", [[company_row.get(header, "") for header in headers]])
+                self._rows_cache.pop("Companies", None)
+                self._login_cache.clear()
+                return
+        if hasattr(worksheet, "update"):
+            worksheet.update("A1", [[stamp]])
+        self._rows_cache.pop("Companies", None)
+        self._login_cache.clear()
+
+    def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str) -> None:
+        self._history_counter += 1
+        worksheet = self.spreadsheet.worksheet("ResponseHistory")
+        if hasattr(worksheet, "rows"):
+            worksheet.rows.append({"HistoryID": f"H{self._history_counter:04}", "CompanyID": company_id, "QuestionID": question_id, "OldValue": old_value, "NewValue": new_value, "ModifiedBy": email, "ModifiedTime": stamp})
+        if hasattr(worksheet, "append_row"):
+            worksheet.append_row([f"H{self._history_counter:04}", company_id, question_id, old_value, new_value, email, stamp])
+
+    def submit(self, company_id: str, email: str) -> None:
+        company = self.company(company_id)
+        if company is None:
+            raise ValueError("Company does not exist")
+        stamp = now()
+        worksheet = self.spreadsheet.worksheet("Companies")
+        if hasattr(worksheet, "rows"):
+            company_row = next((row for row in worksheet.rows if row.get("CompanyID") == company_id), None)
+            if company_row is not None:
+                company_row.update({"Status": "Submitted", "LastUpdated": stamp, "SubmittedBy": email, "SubmittedTime": stamp})
         self.clear_cache()
 
 
@@ -524,7 +749,32 @@ class InMemoryRepository:
         else:
             self.rows("Responses").append({"CompanyID": company_id, "QuestionID": question_id, "ResponseValue": value, "LastModifiedBy": email, "LastModifiedTime": stamp})
         self.append_response_history(company_id, question_id, old, value, email, stamp)
+        self.clear_cache()
+        self.refresh_question_visibility(company_id, self.responses_for(company_id))
         return True
+
+    def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
+        try:
+            from .condition_engine import is_question_visible
+        except ImportError:  # pragma: no cover - support running module directly
+            from condition_engine import is_question_visible
+
+        current_responses = dict(responses or self.responses_for(company_id))
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        for question in self.tables["Questions"]:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+            question["Visible"] = "TRUE" if visible else "FALSE"
+
+        self._design_cache = None
+        self._static_cache.clear()
+        self._login_cache.clear()
+        return current_responses
 
     def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str) -> None:
         self._history_counter += 1

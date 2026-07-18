@@ -1,5 +1,6 @@
 import streamlit as st
 
+from app import repository as repository_module
 from app.app import (
     build_page_structure,
     get_page_readiness,
@@ -88,6 +89,35 @@ def test_question_visibility_state_preserves_new_reappearing_selection():
 
     assert draft_responses["Q002"] == "YES"
     assert session_state["answer_Q002"] == ("YES", "Yes")
+
+
+def test_question_visibility_state_preserves_hidden_answer_in_draft_and_widget_state():
+    pages = [
+        {
+            "PageID": "P001",
+            "Questions": [
+                {"QuestionID": "Q001", "QuestionText": "Trigger", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
+                {"QuestionID": "Q002", "QuestionText": "Dependent", "AnswerType": "Text", "Required": "TRUE", "Active": "TRUE"},
+            ],
+        }
+    ]
+    design_data = {
+        "ConditionsByQuestion": {
+            "Q002": [{"Seq": "1", "DependsOnQuestion": "Q001", "Operator": "=", "ExpectedValue": "YES", "LogicalWithNext": "END"}],
+        },
+        "OptionsByQuestion": {},
+    }
+    draft_responses = {"Q001": "NO", "Q002": "previous answer"}
+    session_state = {
+        "visible_question_ids": {"Q002"},
+        "previously_seen_question_ids": {"Q002"},
+        "answer_Q002": "previous answer",
+    }
+
+    sync_question_visibility_state(pages, design_data, draft_responses, session_state)
+
+    assert draft_responses["Q002"] == "previous answer"
+    assert session_state["answer_Q002"] == "previous answer"
 
 
 def test_page_readiness_counts_only_visible_required_questions():
@@ -204,3 +234,16 @@ def test_sync_draft_responses_preserves_current_user_input():
 
     assert draft_responses["Q001"] == "typed-value"
     assert draft_responses["Q002"] == "repo-other"
+
+
+def test_repository_refresh_question_visibility_updates_visible_field():
+    repo = repository_module.InMemoryRepository()
+    repo.save_response("C001", "Q001", "YES", "owner@example.com")
+    repo.save_response("C001", "Q002", "SOME", "owner@example.com")
+
+    repo.refresh_question_visibility("C001", repo.responses_for("C001"))
+
+    questions = repo.rows("Questions")
+    by_id = {row["QuestionID"]: row for row in questions}
+    assert by_id["Q002"]["Visible"] == "TRUE"
+    assert by_id["Q003"]["Visible"] == "FALSE"

@@ -167,8 +167,15 @@ def sync_question_visibility_state(
                         session_state[answer_key] = ""
                     protected_question_ids.add(question_id)
             else:
-                if question_id in previous_visible_question_ids:
-                    draft_responses.pop(question_id, None)
+                if question_id in previous_visible_question_ids and question_id in draft_responses:
+                    preserved_answer = draft_responses.get(question_id, "")
+                    if str(preserved_answer).strip():
+                        session_state[f"answer_{question_id}"] = preserved_answer
+                        protected_question_ids.add(question_id)
+                    else:
+                        session_state.pop(f"answer_{question_id}", None)
+                        protected_question_ids.discard(question_id)
+                else:
                     session_state.pop(f"answer_{question_id}", None)
                     protected_question_ids.discard(question_id)
 
@@ -471,13 +478,12 @@ def main() -> None:
     # Create draft responses
     draft_responses = st.session_state.setdefault("page_draft_responses", {})
 
-    # If empty, sync it to the repository responses
     if not draft_responses:
         sync_draft_responses(repo, identity["CompanyID"], draft_responses)
-    # I not empty, sync it to widget state
     else:
         sync_widget_state_from_responses(draft_responses)
 
+    repo.refresh_question_visibility(identity["CompanyID"], draft_responses)
     sync_question_visibility_state(pages, design_data, draft_responses, st.session_state)
 
    #--------------------------------------------------
