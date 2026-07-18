@@ -16,10 +16,75 @@ except ImportError:  # pragma: no cover - support running app.py directly
 st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layout="centered")
 
 
-def select_repository(app_env: str | None = None, secrets: Any | None = None) -> tuple[Any, bool]:
-    resolved_env = (app_env or os.getenv("app_env") or "").strip().lower()
+# def select_repository(app_env: str | None = None, secrets: Any | None = None) -> tuple[Any, bool]:
+#     resolved_env = (app_env or os.getenv("app_env") or "").strip().lower()
 
-    if resolved_env == "local":
+#     if resolved_env == "local":
+#         try:
+#             print("Loading local SQLite repository")
+#             return SQLiteRepository(), False
+#         except Exception as exc:
+#             st.warning(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead.")
+#             print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
+#             return InMemoryRepository(), True
+
+#     turso_section = secrets.get("turso", {}) if secrets is not None else {}
+#     turso_config = dict(turso_section)
+#     database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
+#     auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
+
+#     if database_url and auth_token:
+#         try:
+#             print("Loading Turso repository")
+#             from .repository import libsql_available
+#         except ImportError:  # pragma: no cover - support running app.py directly
+#             from repository import libsql_available
+
+#         if not libsql_available():
+#             st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite repository.")
+#             print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite repository.")
+#         else:
+#             try:
+#                 repo = TursoRepository(database_url=database_url, auth_token=auth_token)
+#                 repo.rows("Companies")
+#                 return repo, False
+#             except Exception as exc:
+#                 st.error(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
+#                 print(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
+
+#     if resolved_env in {"turso", "cloud"}:
+#         st.info("Cloud mode is enabled, but Turso credentials were not available. Falling back to local SQLite repository for this session.")
+
+#     try:
+#         print("Loading local SQLite repository")
+#         return SQLiteRepository(), False
+#     except Exception as exc:
+#         st.warning(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead.")
+#         print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
+#         return InMemoryRepository(), True
+
+
+# @st.cache_resource
+# def get_repository() -> tuple[Any, bool]:
+#     print("Loading repository...")
+#     try:
+#         return select_repository(secrets=st.secrets)
+#     except Exception as exc:
+#         st.error(f"Repository initialization failed: {exc}. Using temporary in-memory data instead.")
+#         print(f"Repository initialization failed: {exc}. Using temporary in-memory data instead.")
+#         return InMemoryRepository(), True
+
+@st.cache_resource
+def get_repository() -> tuple[Any, bool]:
+    print("Loading repository...")
+
+    # Load environment variable to determine which repository to use
+    app_env = (os.getenv("app_env") or "").strip().lower()
+    #st.info(f"app_env: {app_env}")
+    #print(f"app_env: {app_env}")
+
+    # If app_env is "local"
+    if app_env == "local":
         try:
             print("Loading local SQLite repository")
             return SQLiteRepository(), False
@@ -27,52 +92,46 @@ def select_repository(app_env: str | None = None, secrets: Any | None = None) ->
             st.warning(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead.")
             print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
             return InMemoryRepository(), True
+    else:
+        print(f"Unrecognized app_env '{app_env}'. Using Turso repository instead.")
 
-    turso_section = secrets.get("turso", {}) if secrets is not None else {}
-    turso_config = dict(turso_section)
-    database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
-    auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
+    # If app_env is not 'local' (e.g. 'local1', or '' (cloud deployment)), attempt to load Turso repository
+    try:
+        print("Loading Turso repository")
+        turso_section = st.secrets.get("turso", {})
+        turso_config = dict(turso_section)
+        database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
+        auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
 
-    if database_url and auth_token:
-        try:
-            print("Loading Turso repository")
-            from .repository import libsql_available
-        except ImportError:  # pragma: no cover - support running app.py directly
-            from repository import libsql_available
-
-        if not libsql_available():
-            st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite repository.")
-            print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite repository.")
-        else:
+        print("turso_database_url_present", bool(database_url))
+        print("turso_auth_token_present", bool(auth_token))
+        if database_url:
             try:
-                repo = TursoRepository(database_url=database_url, auth_token=auth_token)
-                repo.rows("Companies")
-                return repo, False
+                from .repository import libsql_available
+            except ImportError:  # pragma: no cover - support running app.py directly
+                from repository import libsql_available
+            
+            if not libsql_available():
+                st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead.")
+                print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using temporary in-memory data instead.")
+                return InMemoryRepository(), True
+            
+            try:
+                return TursoRepository(database_url=database_url, auth_token=auth_token), False
             except Exception as exc:
-                st.error(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
-                print(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
+                st.error(f"Unable to connect to Turso: {exc}. Using temporary in-memory data instead.")
+                print(f"Unable to connect to Turso: {exc}. Using temporary in-memory data instead.")
+                return InMemoryRepository(), True
 
-    if resolved_env in {"turso", "cloud"}:
-        st.info("Cloud mode is enabled, but Turso credentials were not available. Falling back to local SQLite repository for this session.")
+        st.error("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
+        print("Turso credentials are missing or incomplete. Using temporary in-memory data instead.")
+    
+    except Exception as e:
+        st.error(f"Turso repository initialization failed: {e}. Using temporary in-memory data instead.")
+        print(f"Repository initialization failed: {e}. Using temporary in-memory data instead.")
+    
+    return InMemoryRepository(), True
 
-    try:
-        print("Loading local SQLite repository")
-        return SQLiteRepository(), False
-    except Exception as exc:
-        st.warning(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead.")
-        print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
-        return InMemoryRepository(), True
-
-
-@st.cache_resource
-def get_repository() -> tuple[Any, bool]:
-    print("Loading repository...")
-    try:
-        return select_repository(secrets=st.secrets)
-    except Exception as exc:
-        st.error(f"Repository initialization failed: {exc}. Using temporary in-memory data instead.")
-        print(f"Repository initialization failed: {exc}. Using temporary in-memory data instead.")
-        return InMemoryRepository(), True
 
 
 def value_input(question: dict[str, str], options: list[dict[str, str]], current: str, disabled: bool, draft_responses: dict[str, str]) -> str:
@@ -433,6 +492,37 @@ def main() -> None:
     ####################################################################################################
     # If not logged in, create login page
 
+    # if st.session_state.identity is None:
+    #     st.title("DLM Lifecycle Assessment")
+    #     st.caption("Sign in to work on your company’s shared assessment.")
+    #     with st.form("sign_in"):
+    #         company_id = st.text_input("Company ID")
+    #         email = st.text_input("Email address", placeholder="name@gmail.com")
+    #         submitted = st.form_submit_button("Enter", type="primary")
+        
+    #     # If login form is submitted, attempt to authenticate
+    #     if submitted:
+    #         cleaned_company_id = company_id.strip()
+    #         cleaned_email = email.strip().lower()
+    #         if not cleaned_company_id or not cleaned_email:
+    #             st.warning("Enter both your Company ID and Email address.")
+    #         else:
+    #             repo, demo_mode = get_repository()   # NEW
+    #             try:
+    #                 company, user = authenticate(repo, cleaned_company_id, cleaned_email)
+    #             except Exception:
+    #                 repo, demo_mode = select_repository("local", st.secrets)
+    #                 company, user = authenticate(repo, cleaned_company_id, cleaned_email)
+    #             if not user:
+    #                 st.warning("We couldn't verify your Company ID and Email Address. Please check your details and try again. If the problem persists, contact your Project Administrator.")
+    #             else:
+    #                 clear_answer_widgets()
+    #                 st.session_state.identity = {**user, "CompanyName": company["CompanyName"]}
+    #                 st.rerun()
+
+    #     st.info("Use the Company ID provided by your Project Administrator and the Email Address you registered with the project. If you do not have a Company ID, please contact your Project Administrator before proceeding.")
+    #     return
+
     if st.session_state.identity is None:
         st.title("DLM Lifecycle Assessment")
         st.caption("Sign in to work on your company’s shared assessment.")
@@ -449,11 +539,7 @@ def main() -> None:
                 st.warning("Enter both your Company ID and Email address.")
             else:
                 repo, demo_mode = get_repository()   # NEW
-                try:
-                    company, user = authenticate(repo, cleaned_company_id, cleaned_email)
-                except Exception:
-                    repo, demo_mode = select_repository("local", st.secrets)
-                    company, user = authenticate(repo, cleaned_company_id, cleaned_email)
+                company, user = authenticate(repo, cleaned_company_id, cleaned_email)
                 if not user:
                     st.warning("We couldn't verify your Company ID and Email Address. Please check your details and try again. If the problem persists, contact your Project Administrator.")
                 else:
@@ -467,14 +553,23 @@ def main() -> None:
     ####################################################################################################
     # If already logged in
     
+    # # Prepare data
+    # identity = st.session_state.identity
+    # repo, demo_mode = get_repository()   # NEW
+    # try:
+    #     company = repo.company(identity["CompanyID"])
+    # except Exception:
+    #     repo, demo_mode = select_repository("local", st.secrets)
+    #     company = repo.company(identity["CompanyID"])
+    # assert company
+
+    # # Set readonly tag if company already submitted the form
+    # readonly = company["Status"] == "Submitted"
+
     # Prepare data
     identity = st.session_state.identity
-    repo, demo_mode = get_repository()   # NEW
-    try:
-        company = repo.company(identity["CompanyID"])
-    except Exception:
-        repo, demo_mode = select_repository("local", st.secrets)
-        company = repo.company(identity["CompanyID"])
+    repo, demo_mode = get_repository()
+    company = repo.company(identity["CompanyID"])
     assert company
 
     # Set readonly tag if company already submitted the form
