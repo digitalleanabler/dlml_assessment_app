@@ -1,21 +1,19 @@
 from app import app as app_module
 
 
-def test_select_repository_defaults_to_sqlite_when_turso_is_unavailable(monkeypatch):
+def test_select_repository_uses_turso_when_cloud_secrets_are_available(monkeypatch):
     class DummySQLiteRepository:
         pass
 
-    class DummyInMemoryRepository:
-        pass
-
-    def failing_turso_factory(*args, **kwargs):
-        raise RuntimeError("boom")
+    class DummyTursoRepository:
+        def __init__(self, database_url: str, auth_token: str):
+            self.database_url = database_url
+            self.auth_token = auth_token
 
     monkeypatch.setattr(app_module, "SQLiteRepository", DummySQLiteRepository)
-    monkeypatch.setattr(app_module, "InMemoryRepository", DummyInMemoryRepository)
-    monkeypatch.setattr(app_module, "TursoRepository", failing_turso_factory)
+    monkeypatch.setattr(app_module, "TursoRepository", DummyTursoRepository)
 
-    repo, demo_mode = app_module.select_repository("", {})
+    repo, demo_mode = app_module.select_repository("", {"turso": {"TURSO_DATABASE_URL": "libsql://example", "TURSO_AUTH_TOKEN": "token"}})
 
-    assert isinstance(repo, DummySQLiteRepository)
+    assert isinstance(repo, DummyTursoRepository)
     assert demo_mode is False

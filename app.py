@@ -28,37 +28,30 @@ def select_repository(app_env: str | None = None, secrets: Any | None = None) ->
             print(f"Unable to load local SQLite repository: {exc}. Using temporary in-memory data instead")
             return InMemoryRepository(), True
 
-    if resolved_env in {"turso", "cloud"}:
+    turso_section = secrets.get("turso", {}) if secrets is not None else {}
+    turso_config = dict(turso_section)
+    database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
+    auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
+
+    if database_url and auth_token:
         try:
             print("Loading Turso repository")
-            turso_section = secrets.get("turso", {}) if secrets is not None else {}
-            turso_config = dict(turso_section)
-            database_url = str(turso_config.get("TURSO_DATABASE_URL", "") or "").strip()
-            auth_token = str(turso_config.get("TURSO_AUTH_TOKEN", "") or "").strip()
+            from .repository import libsql_available
+        except ImportError:  # pragma: no cover - support running app.py directly
+            from repository import libsql_available
 
-            print("turso_database_url_present", bool(database_url))
-            print("turso_auth_token_present", bool(auth_token))
-            if database_url:
-                try:
-                    from .repository import libsql_available
-                except ImportError:  # pragma: no cover - support running app.py directly
-                    from repository import libsql_available
+        if not libsql_available():
+            st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite repository.")
+            print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Falling back to local SQLite repository.")
+        else:
+            try:
+                return TursoRepository(database_url=database_url, auth_token=auth_token), False
+            except Exception as exc:
+                st.error(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
+                print(f"Unable to connect to Turso: {exc}. Falling back to local SQLite repository.")
 
-                if not libsql_available():
-                    st.error(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using local SQLite repository instead.")
-                    print(f"Turso support is unavailable because the 'libsql' package is not installed: {LIBSQL_IMPORT_ERROR}. Using local SQLite repository instead.")
-                else:
-                    try:
-                        return TursoRepository(database_url=database_url, auth_token=auth_token), False
-                    except Exception as exc:
-                        st.error(f"Unable to connect to Turso: {exc}. Using local SQLite repository instead.")
-                        print(f"Unable to connect to Turso: {exc}. Using local SQLite repository instead.")
-            else:
-                st.error("Turso credentials are missing or incomplete. Using local SQLite repository instead.")
-                print("Turso credentials are missing or incomplete. Using local SQLite repository instead.")
-        except Exception as exc:
-            st.error(f"Turso repository initialization failed: {exc}. Using local SQLite repository instead.")
-            print(f"Repository initialization failed: {exc}. Using local SQLite repository instead.")
+    if resolved_env in {"turso", "cloud"}:
+        st.info("Cloud mode is enabled, but Turso credentials were not available. Falling back to local SQLite repository for this session.")
 
     try:
         print("Loading local SQLite repository")
