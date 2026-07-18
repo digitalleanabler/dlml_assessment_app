@@ -561,15 +561,19 @@ def main() -> None:
         st.caption("Check the readiness of your submission before sending it.")
         for page in pages[:-1]:
             readiness = get_page_readiness(page["Questions"], design_data["ConditionsByQuestion"], draft_responses)
-            st.write(f"{page['PageTitle']}: {readiness['answered']}/{readiness['total']} required visible questions answered")
-            if readiness["total"]:
-                progress_value = readiness["answered"] / readiness["total"]
-                if readiness["answered"] == readiness["total"]:
-                    st.progress(progress_value, "completed")
+            left_col, right_col = st.columns([3, 2])
+            with left_col:
+                st.write(page["PageTitle"])
+                st.caption(f"{readiness['answered']}/{readiness['total']} required visible questions answered")
+            with right_col:
+                if readiness["total"]:
+                    progress_value = readiness["answered"] / readiness["total"]
+                    if readiness["answered"] == readiness["total"]:
+                        st.progress(progress_value, "completed")
+                    else:
+                        st.progress(progress_value, "incomplete")
                 else:
-                    st.progress(progress_value)
-            else:
-                st.progress(1.0, "completed")
+                    st.progress(1.0, "completed")
         missing = get_missing_required_questions(all_questions, design_data["ConditionsByQuestion"], draft_responses)
         if missing:
             st.warning("Missing required visible answers: " + ", ".join(missing))
