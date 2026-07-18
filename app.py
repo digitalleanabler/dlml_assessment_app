@@ -613,10 +613,18 @@ def main() -> None:
         st.caption("Check the readiness of your submission before sending it.")
         for page in pages[:-1]:
             readiness = get_page_readiness(page["Questions"], design_data["ConditionsByQuestion"], draft_responses)
-            left_col, right_col = st.columns([3, 2])
+            left_col, right_col = st.columns([3, 2], vertical_alignment="center")
             with left_col:
-                st.write(page["PageTitle"])
-                st.caption(f"{readiness['answered']}/{readiness['total']} required visible questions answered")
+                status_text = f"{readiness['answered']}/{readiness['total']} required visible questions answered"
+                st.markdown(
+                    f"""
+                    <div style="margin: 0 0 0.15rem 0; line-height: 1.2;">
+                        <div><strong>{page['PageTitle']}</strong></div>
+                        <div style="font-size: 0.875em; color: rgba(49, 51, 63, 0.6); margin-top: 0.1rem;">{status_text}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
             with right_col:
                 if readiness["total"]:
                     progress_value = readiness["answered"] / readiness["total"]
