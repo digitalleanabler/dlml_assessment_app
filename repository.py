@@ -321,18 +321,31 @@ class TursoRepository(SQLiteRepository):
         self._history_counter = 0
         self._initialize_schema()
 
-    def _connect(self) -> Any:
-        if self._connection is None:
-            if not self.database_url:
-                raise ValueError("Turso database URL is required")
-            if not self.auth_token:
-                raise ValueError("Turso authentication token is required")
+    def _disconnect(self) -> None:
+        if self._connection is not None:
             try:
-                self._connection = libsql.connect(self.database_url, auth_token=self.auth_token)
-            except BaseException as exc:
-                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                    raise
-                raise RuntimeError(f"Failed to connect to Turso: {exc}") from exc
+                self._connection.close()
+            except Exception:
+                pass
+            self._connection = None
+
+    def _connect(self) -> Any:
+        if self._connection is not None:
+            try:
+                self._connection.execute("SELECT 1")
+                return self._connection
+            except BaseException:
+                self._disconnect()
+        if not self.database_url:
+            raise ValueError("Turso database URL is required")
+        if not self.auth_token:
+            raise ValueError("Turso authentication token is required")
+        try:
+            self._connection = libsql.connect(self.database_url, auth_token=self.auth_token)
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            raise RuntimeError(f"Failed to connect to Turso: {exc}") from exc
         return self._connection
 
     def _initialize_schema(self) -> None:
@@ -362,21 +375,27 @@ class TursoRepository(SQLiteRepository):
         conn.commit()
 
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
-        conn = self._connect()
-        try:
-            cursor = conn.execute(f'SELECT * FROM "{worksheet}"')
-        except BaseException as exc:
-            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                raise
-            raise RuntimeError(f"Failed to query Turso worksheet '{worksheet}': {exc}") from exc
-        columns = [column[0] for column in cursor.description or []]
-        rows = []
-        for row in cursor.fetchall():
-            payload = {key: "" if value is None else str(value) for key, value in zip(columns, row)}
-            if not payload or all(str(value).strip() == "" for value in payload.values()):
-                continue
-            rows.append(payload)
-        return rows
+        attempt = 0
+        while True:
+            attempt += 1
+            conn = self._connect()
+            try:
+                cursor = conn.execute(f'SELECT * FROM "{worksheet}"')
+            except BaseException as exc:
+                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                    raise
+                if attempt == 1:
+                    self._disconnect()
+                    continue
+                raise RuntimeError(f"Failed to query Turso worksheet '{worksheet}': {exc}") from exc
+            columns = [column[0] for column in cursor.description or []]
+            rows = []
+            for row in cursor.fetchall():
+                payload = {key: "" if value is None else str(value) for key, value in zip(columns, row)}
+                if not payload or all(str(value).strip() == "" for value in payload.values()):
+                    continue
+                rows.append(payload)
+            return rows
 
     def rows(self, worksheet: str) -> list[dict[str, str]]:
         if worksheet in STATIC_TABLES:
@@ -386,6 +405,7 @@ class TursoRepository(SQLiteRepository):
         return deepcopy(self._rows_for_sheet(worksheet))
 
     def clear_cache(self) -> None:
+        self._disconnect()
         self._rows_cache.clear()
         self._design_cache = None
         self._login_cache.clear()
@@ -478,7 +498,7 @@ class TursoRepository(SQLiteRepository):
                 conn.execute('UPDATE "Questions" SET "Visible" = ? WHERE "QuestionID" = ?', (visible_value, question_id))
             conn.commit()
         finally:
-            conn.close()
+            self._disconnect()
 
         self._design_cache = None
         self.clear_cache()

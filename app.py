@@ -75,10 +75,39 @@ def get_repository() -> tuple[Any, bool]:
     print("Loading repository...")
     try:
         return select_repository(secrets=st.secrets)
-    except Exception as exc:
+    except BaseException as exc:
+        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            raise
         st.error(f"Repository initialization failed: {exc}. Using temporary in-memory data instead.")
         print(f"Repository initialization failed: {exc}. Using temporary in-memory data instead.")
         return InMemoryRepository(), True
+
+
+def ensure_repository(repo: Any, secrets: Any | None = None) -> tuple[Any, bool]:
+    try:
+        repo.design_data()
+        return repo, False
+    except BaseException as exc:
+        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            raise
+        if hasattr(repo, "clear_cache"):
+            try:
+                repo.clear_cache()
+            except Exception:
+                pass
+        if hasattr(repo, "_disconnect"):
+            try:
+                repo._disconnect()
+            except Exception:
+                pass
+        st.error(f"Cloud repository access failed: {exc}. Switching to fallback repository.")
+        print(f"Cloud repository access failed: {exc}. Switching to fallback repository.")
+        if hasattr(get_repository, "clear"):
+            try:
+                get_repository.clear()
+            except Exception:
+                pass
+        return select_repository("", secrets)
 
 
 def value_input(question: dict[str, str], options: list[dict[str, str]], current: str, disabled: bool, draft_responses: dict[str, str]) -> str:
@@ -455,12 +484,14 @@ def main() -> None:
                 st.warning("Enter both your Company ID and Email address.")
             else:
                 repo, demo_mode = get_repository()   # NEW
+                repo, demo_mode = ensure_repository(repo, st.secrets)
                 try:
                     company, user = authenticate(repo, cleaned_company_id, cleaned_email)
                 except BaseException as exc:  # pragma: no cover - handle runtime panics from libsql
                     if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                         raise
-                    repo, demo_mode = select_repository("local", st.secrets)
+                    get_repository.clear()
+                    repo, demo_mode = select_repository("", st.secrets)
                     company, user = authenticate(repo, cleaned_company_id, cleaned_email)
                 if not user:
                     st.warning("We couldn't verify your Company ID and Email Address. Please check your details and try again. If the problem persists, contact your Project Administrator.")
@@ -478,10 +509,12 @@ def main() -> None:
     # Prepare data
     identity = st.session_state.identity
     repo, demo_mode = get_repository()   # NEW
+    repo, demo_mode = ensure_repository(repo, st.secrets)
     try:
         company = repo.company(identity["CompanyID"])
-    except Exception:
-        repo, demo_mode = select_repository("local", st.secrets)
+    except BaseException:
+        get_repository.clear()
+        repo, demo_mode = select_repository("", st.secrets)
         company = repo.company(identity["CompanyID"])
     assert company
 
