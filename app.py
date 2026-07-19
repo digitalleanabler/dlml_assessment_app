@@ -114,6 +114,7 @@ def value_input(question: dict[str, str], options: list[dict[str, str]], current
     question_id = str(question["QuestionID"])
     key = f"answer_{question_id}"
     label = question["QuestionText"] + (" *" if str(question.get("Required", "")).upper() == "TRUE" else "")
+    label = f"[{question_id}]: {label}"
     kind = question["AnswerType"].upper()
 
     if key not in st.session_state:
