@@ -16,6 +16,33 @@ except ImportError:  # pragma: no cover - support running app.py directly
 st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layout="centered")
 
 
+# Function to initialize host-level visibility for all companies
+_HOST_VISIBILITY_INITIALIZED = False
+def initialize_host_visibility(repo: Any) -> bool:
+    global _HOST_VISIBILITY_INITIALIZED
+    if _HOST_VISIBILITY_INITIALIZED:
+        return False
+
+    if not hasattr(repo, "refresh_question_visibility"):
+        _HOST_VISIBILITY_INITIALIZED = True
+        return False
+
+    try:
+        companies = repo.rows("Companies") if hasattr(repo, "rows") else []
+        for company in companies:
+            company_id = str(company.get("CompanyID", "") or "").strip()
+            if not company_id:
+                continue
+            responses = repo.responses_for(company_id) if hasattr(repo, "responses_for") else {}
+            repo.refresh_question_visibility(company_id, responses)
+
+        _HOST_VISIBILITY_INITIALIZED = True
+        return True
+    except Exception as exc:
+        print(f"Host-level visibility initialization failed: {exc}")
+        return False
+
+
 def select_repository(app_env: str | None = None, secrets: Any | None = None) -> tuple[Any, bool]:
     general_section = secrets.get("general", {}) if secrets is not None else {}
     resolved_env = (app_env or os.getenv("app_env") or str(general_section.get("app_env", "")) or "").strip().lower()
@@ -74,7 +101,9 @@ def select_repository(app_env: str | None = None, secrets: Any | None = None) ->
 def get_repository() -> tuple[Any, bool]:
     print("Loading repository...")
     try:
-        return select_repository(secrets=st.secrets)
+        repo, demo_mode = select_repository(secrets=st.secrets)
+        initialize_host_visibility(repo)
+        return repo, demo_mode
     except BaseException as exc:
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):
             raise
