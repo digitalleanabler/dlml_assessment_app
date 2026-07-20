@@ -199,19 +199,25 @@ def resolve_question_visibility(
     question: dict[str, Any],
     conditions: list[dict[str, Any]],
     responses: dict[str, str],
+    *,
+    use_repository_visibility: bool = False,
 ) -> bool:
+    visible_by_condition = is_question_visible(question, conditions, responses)
+    if not use_repository_visibility:
+        return visible_by_condition
+
     question_id = str(question.get("QuestionID", "") or "").strip()
-    if repo is not None and company_id:
+    if repo is not None and company_id and question_id:
         try:
             visibility_rows = repo.rows("QuestionVisibility") if hasattr(repo, "rows") else []
             for row in visibility_rows:
                 if str(row.get("CompanyID", "") or "").strip() == str(company_id) and str(row.get("QuestionID", "") or "").strip() == question_id:
                     value = str(row.get("Visible", "") or "").strip().upper()
                     if value in {"TRUE", "FALSE"}:
-                        return value == "TRUE"
+                        return visible_by_condition and value == "TRUE"
         except Exception:
             pass
-    return is_question_visible(question, conditions, responses)
+    return visible_by_condition
 
 
 def sync_question_visibility_state(
@@ -222,6 +228,12 @@ def sync_question_visibility_state(
     repo: Any | None = None,
     company_id: str | None = None,
 ) -> None:
+    if repo is not None and company_id:
+        try:
+            repo.refresh_question_visibility(company_id, dict(draft_responses))
+        except Exception as exc:
+            print(f"Failed to refresh question visibility during sync: {exc}")
+
     previous_visible_question_ids = set(session_state.get("visible_question_ids", set()))
     previously_seen_question_ids = set(session_state.get("previously_seen_question_ids", set()))
     current_visible_question_ids: set[str] = set()
@@ -338,15 +350,15 @@ def get_missing_required_questions(
     questions: list[dict[str, str]],
     conditions_by_question: dict[str, list[dict[str, Any]]],
     responses: dict[str, str],
+    repo: Any | None = None,
+    company_id: str | None = None,
 ) -> list[str]:
     missing: list[str] = []
     for question in questions:
         question_id = question["QuestionID"]
         if str(question.get("Required", "")).upper() != "TRUE":
             continue
-        if str(question.get("Active", "")).upper() != "TRUE":
-            continue
-        if not is_question_visible(question, conditions_by_question.get(question_id, []), responses):
+        if not resolve_question_visibility(repo, company_id, question, conditions_by_question.get(question_id, []), responses, use_repository_visibility=True):
             continue
         value = responses.get(question_id, "")
         if not str(value).strip():
@@ -358,6 +370,8 @@ def get_page_readiness(
     questions: list[dict[str, str]],
     conditions_by_question: dict[str, list[dict[str, Any]]],
     responses: dict[str, str],
+    repo: Any | None = None,
+    company_id: str | None = None,
 ) -> dict[str, Any]:
     answered = 0
     total = 0
@@ -366,9 +380,7 @@ def get_page_readiness(
         question_id = question["QuestionID"]
         if str(question.get("Required", "")).upper() != "TRUE":
             continue
-        if str(question.get("Active", "")).upper() != "TRUE":
-            continue
-        if not is_question_visible(question, conditions_by_question.get(question_id, []), responses):
+        if not resolve_question_visibility(repo, company_id, question, conditions_by_question.get(question_id, []), responses, use_repository_visibility=True):
             continue
         total += 1
         value = str(responses.get(question_id, "") or "").strip()
@@ -501,11 +513,18 @@ def save_page_questions(repo: Any, company_id: str, email: str, questions: list[
     return saved_count
 
 
-def render_question_page(page: dict[str, Any], design_data: dict[str, Any], draft_responses: dict[str, str], readonly: bool) -> None:
+def render_question_page(
+    page: dict[str, Any],
+    design_data: dict[str, Any],
+    draft_responses: dict[str, str],
+    readonly: bool,
+    repo: Any | None = None,
+    company_id: str | None = None,
+) -> None:
     for question in page.get("Questions", []):
         question_id = question["QuestionID"]
         conditions = design_data["ConditionsByQuestion"].get(question_id, [])
-        if not resolve_question_visibility(None, None, question, conditions, draft_responses):
+        if not resolve_question_visibility(repo, company_id, question, conditions, draft_responses):
             continue
         options = sorted(
             design_data["OptionsByQuestion"].get(question_id, []),
@@ -646,7 +665,7 @@ def main() -> None:
     if selected_page_id != "review":
 
         st.subheader(selected_page["PageTitle"])
-        render_question_page(selected_page, design_data, draft_responses, readonly)
+        render_question_page(selected_page, design_data, draft_responses, readonly, repo=repo, company_id=identity["CompanyID"])
         if not readonly:
             st.divider()
             save_clicked = st.button("Save this page", type="primary")
@@ -665,7 +684,7 @@ def main() -> None:
         st.subheader("Review")
         st.caption("Check the readiness of your submission before sending it.")
         for page in pages[:-1]:
-            readiness = get_page_readiness(page["Questions"], design_data["ConditionsByQuestion"], draft_responses)
+            readiness = get_page_readiness(page["Questions"], design_data["ConditionsByQuestion"], draft_responses, repo=repo, company_id=identity["CompanyID"])
             left_col, right_col = st.columns([3, 2], vertical_alignment="center")
             with left_col:
                 status_text = f"{readiness['answered']}/{readiness['total']} required visible questions answered"
@@ -687,14 +706,14 @@ def main() -> None:
                         st.progress(progress_value, "incomplete")
                 else:
                     st.progress(1.0, "completed")
-        missing = get_missing_required_questions(all_questions, design_data["ConditionsByQuestion"], draft_responses)
+        missing = get_missing_required_questions(all_questions, design_data["ConditionsByQuestion"], draft_responses, repo=repo, company_id=identity["CompanyID"])
         if missing:
             st.warning("Missing required visible answers: " + ", ".join(missing))
         else:
             st.success("All required visible questions are answered.")
         if not readonly:
             if st.button("Submit assessment", type="primary", use_container_width=True):
-                missing = get_missing_required_questions(all_questions, design_data["ConditionsByQuestion"], draft_responses)
+                missing = get_missing_required_questions(all_questions, design_data["ConditionsByQuestion"], draft_responses, repo=repo, company_id=identity["CompanyID"])
                 if missing:
                     st.error("Complete all required questions before submitting: " + ", ".join(missing))
                 else:

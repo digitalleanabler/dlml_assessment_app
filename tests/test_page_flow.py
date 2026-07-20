@@ -3,8 +3,10 @@ import streamlit as st
 from app import repository as repository_module
 from app.app import (
     build_page_structure,
+    get_missing_required_questions,
     get_page_readiness,
     reload_page_responses,
+    resolve_question_visibility,
     reload_page_responses_for_page,
     reload_responses_for_navigation,
     sync_draft_responses,
@@ -136,6 +138,56 @@ def test_page_readiness_counts_only_visible_required_questions():
     assert readiness["answered"] == 1
     assert readiness["total"] == 2
     assert readiness["completed"] is False
+
+
+def test_review_helpers_use_repository_visibility_rows():
+    class DummyRepo:
+        def rows(self, table_name: str):
+            if table_name == "QuestionVisibility":
+                return [{"CompanyID": "C001", "QuestionID": "Q002", "Visible": "FALSE"}]
+            return []
+
+    questions = [
+        {"QuestionID": "Q001", "QuestionText": "First", "Required": "TRUE", "Active": "TRUE"},
+        {"QuestionID": "Q002", "QuestionText": "Second", "Required": "TRUE", "Active": "TRUE"},
+    ]
+
+    readiness = get_page_readiness(questions, {}, {"Q001": "YES"}, repo=DummyRepo(), company_id="C001")
+    missing = get_missing_required_questions(questions, {}, {"Q001": "YES"}, repo=DummyRepo(), company_id="C001")
+
+    assert readiness["total"] == 1
+    assert readiness["answered"] == 1
+    assert missing == []
+
+
+def test_resolve_question_visibility_prefers_current_answers_over_stale_repository_rows():
+    question = {"QuestionID": "Q003", "Active": "TRUE"}
+    repo = type("Repo", (), {"rows": lambda self, table_name: [{"CompanyID": "C001", "QuestionID": "Q003", "Visible": "TRUE"}]})()
+
+    visible = resolve_question_visibility(
+        repo,
+        "C001",
+        question,
+        [{"DependsOnQuestion": "Q002", "Operator": "=", "ExpectedValue": "ALL"}],
+        {"Q002": "SOME"},
+    )
+
+    assert visible is False
+
+
+def test_resolve_question_visibility_uses_live_draft_answers_when_repository_visibility_is_stale():
+    question = {"QuestionID": "Q003", "Active": "TRUE"}
+    repo = type("Repo", (), {"rows": lambda self, table_name: [{"CompanyID": "C001", "QuestionID": "Q003", "Visible": "FALSE"}]})()
+
+    visible = resolve_question_visibility(
+        repo,
+        "C001",
+        question,
+        [{"DependsOnQuestion": "Q002", "Operator": "=", "ExpectedValue": "ALL"}],
+        {"Q002": "ALL"},
+    )
+
+    assert visible is True
 
 
 def test_reload_keeps_current_page_and_only_refreshes_saved_values():
