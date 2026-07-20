@@ -9,6 +9,7 @@ from app.app import (
     resolve_question_visibility,
     reload_page_responses_for_page,
     reload_responses_for_navigation,
+    save_page_questions,
     sync_draft_responses,
     sync_question_visibility_state,
     sync_widget_state_from_responses,
@@ -154,6 +155,29 @@ def test_sync_question_visibility_state_avoids_repository_refresh_for_live_page_
 
     assert repo.refresh_calls == 0
     assert session_state["visible_question_ids"] == {"Q002", "Q003"}
+
+
+def test_save_page_questions_uses_repository_state_when_local_snapshot_is_stale():
+    class DummyRepo:
+        def __init__(self):
+            self.saved = []
+
+        def responses_for(self, company_id: str):
+            return {"Q001": "repo-value"}
+
+        def save_response(self, company_id: str, question_id: str, value: str, email: str):
+            self.saved.append((company_id, question_id, value, email))
+            return True
+
+    st.session_state.clear()
+    st.session_state["saved_responses"] = {"Q001": "local-value"}
+    st.session_state["answer_Q001"] = "local-value"
+    repo = DummyRepo()
+
+    saved_count = save_page_questions(repo, "C001", "user@example.com", [{"QuestionID": "Q001"}], {})
+
+    assert saved_count == 1
+    assert repo.saved == [("C001", "Q001", "local-value", "user@example.com")]
 
 
 def test_page_readiness_counts_only_visible_required_questions():

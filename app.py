@@ -477,6 +477,13 @@ def reload_responses_for_navigation(
 
 def save_page_questions(repo: Any, company_id: str, email: str, questions: list[dict[str, str]], draft_responses: dict[str, str]) -> int:
     existing = dict(st.session_state.get("saved_responses", {}))
+    latest_repository_responses: dict[str, str] = {}
+    if hasattr(repo, "responses_for"):
+        try:
+            latest_repository_responses = dict(repo.responses_for(company_id))
+        except Exception as exc:
+            print(f"Failed to load latest repository responses before save: {exc}")
+
     saved_count = 0
     for question in questions:
         question_id = question["QuestionID"]
@@ -489,7 +496,9 @@ def save_page_questions(repo: Any, company_id: str, email: str, questions: list[
         else:
             value = widget_value
         draft_responses[question_id] = value
-        if str(existing.get(question_id, "")) != str(value):
+
+        baseline_value = latest_repository_responses.get(question_id, existing.get(question_id, ""))
+        if str(baseline_value) != str(value):
             repo.save_response(company_id, question_id, value, email)
             saved_count += 1
     if saved_count and hasattr(repo, "refresh_question_visibility"):
