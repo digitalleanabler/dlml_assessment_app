@@ -25,17 +25,18 @@ def libsql_available() -> bool:
     return libsql is not None
 
 
-SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "Responses", "ResponseHistory")
+SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "QuestionVisibility", "Responses", "ResponseHistory")
 STATIC_TABLES = {"Pages", "Questions", "QuestionOptions", "QuestionConditions"}
 SHEET_HEADERS = {
     "Companies": ["CompanyID", "CompanyName", "Status", "LastUpdated", "SubmittedBy", "SubmittedTime"],
     "Users": ["Email", "Name", "CompanyID"],
     "Pages": ["PageID", "PageTitle"],
-    "Questions": ["QuestionID", "PageID", "Sequence", "QuestionText", "AnswerType", "Required", "Active", "Visible"],
+    "Questions": ["QuestionID", "PageID", "Sequence", "QuestionText", "AnswerType", "Required"],
     "QuestionOptions": ["OptionID", "QuestionID", "DisplayOrder", "OptionValue", "DisplayText"],
     "QuestionConditions": ["LogicID", "QuestionID", "Seq", "LeftParen", "DependsOnQuestion", "Operator", "ExpectedValue", "RightParen", "LogicalWithNext"],
+    "QuestionVisibility": ["CompanyID", "QuestionID", "Visible"],
     "Responses": ["CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime"],
-    "ResponseHistory": ["HistoryID", "CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime"],
+    "ResponseHistory": ["CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime"],
 }
 
 
@@ -53,48 +54,36 @@ def now() -> str:
 
 SEED: dict[str, list[dict[str, str]]] = {
     "Companies": [
-        {"CompanyID": "C001", "CompanyName": "SWAT in DreamXXX", "Status": "Draft", "LastUpdated": "deac@gmail.com",  "SubmittedBy": "", "SubmittedTime": ""},
-        {"CompanyID": "C002", "CompanyName": "LAFD in DreamXXX", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
+        {"CompanyID": "C001", "CompanyName": "Northwind Pumps", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
+        {"CompanyID": "C002", "CompanyName": "Contoso Manufacturing", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
     ],
     "Users": [
-        {"Email": "tonytanakorn@gmail.com", "Name": "TonyXXX", "CompanyID": "C001"},
-        {"Email": "digitalleanabler@gmail.com", "Name": "LeanablerXXX", "CompanyID": "C001"},
-        {"Email": "hondo@gmail.com", "Name": "HondoXXX", "CompanyID": "C001"},
-        {"Email": "deac@gmail.com", "Name": "DeaconXXX", "CompanyID": "C001"},
-        {"Email": "tanakorn.tan@nectec.or.th", "Name": "TanakornXXX", "CompanyID": "C002"},
-        {"Email": "toneiam@gmail.com", "Name": "EiamXXX", "CompanyID": "C002"},
-        {"Email": "bobby@gmail.com", "Name": "BobbyXXX", "CompanyID": "C002"},
-        {"Email": "buck@gmail.com", "Name": "BuckXXX", "CompanyID": "C002"},
+        {"Email": "maya@northwind.example", "Name": "Maya Chen", "CompanyID": "C001"},
+        {"Email": "alex@northwind.example", "Name": "Alex Rivera", "CompanyID": "C001"},
+        {"Email": "sara@contoso.example", "Name": "Sara Kim", "CompanyID": "C002"},
     ],
     "Pages": [
-        {"PageID": "P001", "PageTitle": "Business GoalXXX"},
-        {"PageID": "P002", "PageTitle": "Business ObjectivesXXX"},
+        {"PageID": "P001", "PageTitle": "Business Goal"},
+        {"PageID": "P002", "PageTitle": "Business Objectives"},
     ],
     "Questions": [
-        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "Describe your products?XXX", "AnswerType": "Text", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
-        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "Lean implementation level?XXX", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
-        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "TPM implemented?XXX", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE", "Visible": "TRUE"},
+        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "Describe your products?", "AnswerType": "Text", "Required": "TRUE"},
+        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "Lean implementation level?", "AnswerType": "Choice", "Required": "TRUE"},
+        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "TPM implemented?", "AnswerType": "Choice", "Required": "TRUE"},
     ],
     "QuestionOptions": [
-        {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "NoneXXX"},
-        {"OptionID": "O002B", "QuestionID": "Q002", "DisplayOrder": "2", "OptionValue": "SOME", "DisplayText": "SomeXXX"},
-        {"OptionID": "O002C", "QuestionID": "Q002", "DisplayOrder": "3", "OptionValue": "ALL", "DisplayText": "AllXXX"},
-        {"OptionID": "O003A", "QuestionID": "Q003", "DisplayOrder": "1", "OptionValue": "NO", "DisplayText": "NoXXX"},
-        {"OptionID": "O003B", "QuestionID": "Q003", "DisplayOrder": "2", "OptionValue": "YES", "DisplayText": "YesXXX"},
+        {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "None"},
+        {"OptionID": "O002B", "QuestionID": "Q002", "DisplayOrder": "2", "OptionValue": "SOME", "DisplayText": "Some"},
+        {"OptionID": "O002C", "QuestionID": "Q002", "DisplayOrder": "3", "OptionValue": "ALL", "DisplayText": "All"},
+        {"OptionID": "O003A", "QuestionID": "Q003", "DisplayOrder": "1", "OptionValue": "NO", "DisplayText": "No"},
+        {"OptionID": "O003B", "QuestionID": "Q003", "DisplayOrder": "2", "OptionValue": "YES", "DisplayText": "Yes"},
     ],
     "QuestionConditions": [
         {"LogicID": "L001", "QuestionID": "Q003", "Seq": "1", "LeftParen": "", "DependsOnQuestion": "Q002", "Operator": "=", "ExpectedValue": "ALL", "RightParen": "", "LogicalWithNext": "END"},
     ],
-    "Responses": [
-        {"CompanyID": "C001", "QuestionID": "Q001", "ResponseValue": "CarsXXX", "LastModifiedBy": "digitalleanabler@gmail.com", "LastModifiedTime": "2026-07-15 22:56:47 +0700"},
-        {"CompanyID": "C001", "QuestionID": "Q002", "ResponseValue": "ALL", "LastModifiedBy": "hondo@gmail.com", "LastModifiedTime": "2026-07-15 22:57:47 +0700"},
-        {"CompanyID": "C001", "QuestionID": "Q003", "ResponseValue": "YES", "LastModifiedBy": "deac@gmail.com", "LastModifiedTime": "2026-07-15 22:58:47 +0700"}
-    ],
-    "ResponseHistory": [
-        {"HistoryID": "H001", "CompanyID": "C001", "QuestionID": "Q001", "OldValue": "", "NewValue": "CarsXXX", "ModifiedBy": "digitalleanabler@gmail.com", "ModifiedTime": "2026-07-15 22:56:47 +0700"},
-        {"HistoryID": "H002", "CompanyID": "C001", "QuestionID": "Q002", "OldValue": "", "NewValue": "ALL", "ModifiedBy": "hondo@gmail.com", "ModifiedTime": "2026-07-15 22:57:47 +0700"},
-        {"HistoryID": "H003", "CompanyID": "C001", "QuestionID": "Q003", "OldValue": "", "NewValue": "YES", "ModifiedBy": "deac@gmail.com", "ModifiedTime": "2026-07-15 22:58:47 +0700"},
-    ],
+    "QuestionVisibility": [],
+    "Responses": [],
+    "ResponseHistory": [],
 }
 
 
@@ -153,6 +142,49 @@ class SQLiteRepository:
                     continue
                 rows.append(payload)
             return rows
+
+    def _ensure_company_runtime_rows(self, company_id: str, questions: list[dict[str, str]] | None = None, responses: dict[str, str] | None = None, conn: sqlite3.Connection | None = None) -> None:
+        company_id = str(company_id or "").strip()
+        if not company_id:
+            return
+        if questions is None:
+            questions = self.rows("Questions")
+        if not questions:
+            return
+
+        current_responses = dict(responses or self.responses_for(company_id))
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        connection = conn or self._connect()
+        try:
+            for question in questions:
+                question_id = str(question.get("QuestionID", "") or "").strip()
+                if not question_id:
+                    continue
+
+                try:
+                    from .condition_engine import is_question_visible
+                except ImportError:  # pragma: no cover - support running module directly
+                    from condition_engine import is_question_visible
+
+                visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+                visible_value = "TRUE" if visible else "FALSE"
+                existing_visibility = connection.execute('SELECT 1 FROM "QuestionVisibility" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
+                if existing_visibility is None:
+                    connection.execute('INSERT INTO "QuestionVisibility" ("CompanyID", "QuestionID", "Visible") VALUES (?, ?, ?)', (company_id, question_id, visible_value))
+                else:
+                    connection.execute('UPDATE "QuestionVisibility" SET "Visible" = ? WHERE "CompanyID" = ? AND "QuestionID" = ?', (visible_value, company_id, question_id))
+
+                existing_response = connection.execute('SELECT 1 FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
+                if existing_response is None:
+                    connection.execute('INSERT INTO "Responses" ("CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime") VALUES (?, ?, ?, ?, ?)', (company_id, question_id, "", "", ""))
+            if conn is None:
+                connection.commit()
+        finally:
+            if conn is None:
+                connection.close()
 
     def rows(self, worksheet: str) -> list[dict[str, str]]:
         if worksheet in STATIC_TABLES:
@@ -225,6 +257,7 @@ class SQLiteRepository:
 
     def save_response(self, company_id: str, question_id: str, value: str, email: str) -> bool:
         with self._connect() as conn:
+            self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=self.responses_for(company_id), conn=conn)
             existing = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
             old = existing[0] if existing else ""
             if old == value:
@@ -236,31 +269,16 @@ class SQLiteRepository:
                 conn.execute('INSERT INTO "Responses" ("CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime") VALUES (?, ?, ?, ?, ?)', (company_id, question_id, value, email, stamp))
             self._update_company_last_updated(company_id, stamp, conn=conn)
             self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
+            conn.commit()
         self.clear_cache()
 
         return True
 
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
-        try:
-            from .condition_engine import is_question_visible
-        except ImportError:  # pragma: no cover - support running module directly
-            from condition_engine import is_question_visible
-
         current_responses = dict(responses or self.responses_for(company_id))
-        questions = self.rows("Questions")
-        conditions_by_question: dict[str, list[dict[str, str]]] = {}
-        for row in self.rows("QuestionConditions"):
-            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
-
         with self._connect() as conn:
-            for question in questions:
-                question_id = str(question.get("QuestionID", "") or "").strip()
-                if not question_id:
-                    continue
-                visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
-                visible_value = "TRUE" if visible else "FALSE"
-                conn.execute('UPDATE "Questions" SET "Visible" = ? WHERE "QuestionID" = ?', (visible_value, question_id))
-
+            self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=current_responses, conn=conn)
+            conn.commit()
         self._design_cache = None
         self.clear_cache()
         return current_responses
@@ -276,11 +294,9 @@ class SQLiteRepository:
                 connection.close()
 
     def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str, conn: sqlite3.Connection | None = None) -> None:
-        self._history_counter += 1
-        next_id = f"H{self._history_counter:04}"
         connection = conn or self._connect()
         try:
-            connection.execute('INSERT INTO "ResponseHistory" ("HistoryID", "CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?, ?)', (next_id, company_id, question_id, old_value, new_value, email, stamp))
+            connection.execute('INSERT INTO "ResponseHistory" ("CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?)', (company_id, question_id, old_value, new_value, email, stamp))
             if conn is None:
                 connection.commit()
         finally:
@@ -451,6 +467,7 @@ class TursoRepository(SQLiteRepository):
 
     def save_response(self, company_id: str, question_id: str, value: str, email: str) -> bool:
         conn = self._connect()
+        self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=self.responses_for(company_id), conn=conn)
         existing_row = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
         existing = existing_row[0] if existing_row else None
         old = existing or ""
@@ -469,26 +486,10 @@ class TursoRepository(SQLiteRepository):
         return True
 
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
-        try:
-            from .condition_engine import is_question_visible
-        except ImportError:  # pragma: no cover - support running module directly
-            from condition_engine import is_question_visible
-
         current_responses = dict(responses or self.responses_for(company_id))
-        questions = self.rows("Questions")
-        conditions_by_question: dict[str, list[dict[str, str]]] = {}
-        for row in self.rows("QuestionConditions"):
-            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
-
         conn = self._connect()
         try:
-            for question in questions:
-                question_id = str(question.get("QuestionID", "") or "").strip()
-                if not question_id:
-                    continue
-                visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
-                visible_value = "TRUE" if visible else "FALSE"
-                conn.execute('UPDATE "Questions" SET "Visible" = ? WHERE "QuestionID" = ?', (visible_value, question_id))
+            self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=current_responses, conn=conn)
             conn.commit()
         finally:
             self._disconnect()
@@ -502,10 +503,8 @@ class TursoRepository(SQLiteRepository):
         connection.execute('UPDATE "Companies" SET "LastUpdated" = ? WHERE "CompanyID" = ?', (stamp, company_id))
 
     def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str, conn: Any | None = None) -> None:
-        self._history_counter += 1
-        next_id = f"H{self._history_counter:04}"
         connection = conn or self._connect()
-        connection.execute('INSERT INTO "ResponseHistory" ("HistoryID", "CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?, ?)', (next_id, company_id, question_id, old_value, new_value, email, stamp))
+        connection.execute('INSERT INTO "ResponseHistory" ("CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?)', (company_id, question_id, old_value, new_value, email, stamp))
 
     def submit(self, company_id: str, email: str) -> None:
         company = self.company(company_id)
@@ -535,6 +534,43 @@ class GoogleSheetsRepository:
             return []
         rows = sheet.get_all_records(default_blank="") if hasattr(sheet, "get_all_records") else []
         return [{key: "" if value is None else str(value) for key, value in row.items()} for row in rows]
+
+    def _ensure_company_runtime_rows(self, company_id: str, questions: list[dict[str, str]] | None = None, responses: dict[str, str] | None = None, conn: Any | None = None) -> None:
+        company_id = str(company_id or "").strip()
+        if not company_id:
+            return
+        if questions is None:
+            questions = self.rows("Questions")
+        if not questions:
+            return
+
+        current_responses = dict(responses or self.responses_for(company_id))
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        for question in questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            try:
+                from .condition_engine import is_question_visible
+            except ImportError:  # pragma: no cover - support running module directly
+                from condition_engine import is_question_visible
+            visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+            visible_value = "TRUE" if visible else "FALSE"
+            existing = next((row for row in self.rows("QuestionVisibility") if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
+            if existing is None:
+                self.rows("QuestionVisibility").append({"CompanyID": company_id, "QuestionID": question_id, "Visible": visible_value})
+            else:
+                existing["Visible"] = visible_value
+
+            existing_response = next((row for row in self.rows("Responses") if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
+            if existing_response is None:
+                self.rows("Responses").append({"CompanyID": company_id, "QuestionID": question_id, "ResponseValue": "", "LastModifiedBy": "", "LastModifiedTime": ""})
+
+        self._rows_cache.pop("QuestionVisibility", None)
+        self._rows_cache.pop("Responses", None)
 
     def rows(self, worksheet: str) -> list[dict[str, str]]:
         if worksheet not in self._rows_cache:
@@ -625,25 +661,8 @@ class GoogleSheetsRepository:
         return True
 
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
-        try:
-            from .condition_engine import is_question_visible
-        except ImportError:  # pragma: no cover - support running module directly
-            from condition_engine import is_question_visible
-
         current_responses = dict(responses or self.responses_for(company_id))
-        questions = self.rows("Questions")
-        conditions_by_question: dict[str, list[dict[str, str]]] = {}
-        for row in self.rows("QuestionConditions"):
-            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
-
-        for question in questions:
-            question_id = str(question.get("QuestionID", "") or "").strip()
-            if not question_id:
-                continue
-            visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
-            visible_value = "TRUE" if visible else "FALSE"
-            question["Visible"] = visible_value
-
+        self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=current_responses)
         self._design_cache = None
         self.clear_cache()
         return current_responses
@@ -701,6 +720,43 @@ class InMemoryRepository:
         self._design_cache: dict[str, Any] | None = None
         self._login_cache: dict[str, list[dict[str, str]]] = {}
         self._history_counter = 0
+
+    def _ensure_company_runtime_rows(self, company_id: str, questions: list[dict[str, str]] | None = None, responses: dict[str, str] | None = None) -> None:
+        company_id = str(company_id or "").strip()
+        if not company_id:
+            return
+        if questions is None:
+            questions = self.rows("Questions")
+        if not questions:
+            return
+
+        current_responses = dict(responses or self.responses_for(company_id))
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        self.tables.setdefault("QuestionVisibility", [])
+        self.tables.setdefault("Responses", [])
+
+        for question in questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            try:
+                from .condition_engine import is_question_visible
+            except ImportError:  # pragma: no cover - support running module directly
+                from condition_engine import is_question_visible
+            visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+            visible_value = "TRUE" if visible else "FALSE"
+            existing = next((row for row in self.tables["QuestionVisibility"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
+            if existing is None:
+                self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": visible_value})
+            else:
+                existing["Visible"] = visible_value
+
+            existing_response = next((row for row in self.tables["Responses"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
+            if existing_response is None:
+                self.tables["Responses"].append({"CompanyID": company_id, "QuestionID": question_id, "ResponseValue": "", "LastModifiedBy": "", "LastModifiedTime": ""})
 
     def rows(self, worksheet: str) -> list[dict[str, str]]:
         if worksheet in STATIC_TABLES:
@@ -790,7 +846,9 @@ class InMemoryRepository:
             if not question_id:
                 continue
             visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
-            question["Visible"] = "TRUE" if visible else "FALSE"
+            self._ensure_company_runtime_rows(company_id, questions=[question], responses=current_responses)
+            self.tables["QuestionVisibility"] = [row for row in self.tables["QuestionVisibility"] if not (row.get("CompanyID") == company_id and row.get("QuestionID") == question_id)]
+            self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": "TRUE" if visible else "FALSE"})
 
         self._design_cache = None
         self._static_cache.clear()

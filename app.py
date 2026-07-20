@@ -193,11 +193,34 @@ def clear_answer_widgets() -> None:
     st.session_state.pop("previously_seen_question_ids", None)
 
 
+def resolve_question_visibility(
+    repo: Any | None,
+    company_id: str | None,
+    question: dict[str, Any],
+    conditions: list[dict[str, Any]],
+    responses: dict[str, str],
+) -> bool:
+    question_id = str(question.get("QuestionID", "") or "").strip()
+    if repo is not None and company_id:
+        try:
+            visibility_rows = repo.rows("QuestionVisibility") if hasattr(repo, "rows") else []
+            for row in visibility_rows:
+                if str(row.get("CompanyID", "") or "").strip() == str(company_id) and str(row.get("QuestionID", "") or "").strip() == question_id:
+                    value = str(row.get("Visible", "") or "").strip().upper()
+                    if value in {"TRUE", "FALSE"}:
+                        return value == "TRUE"
+        except Exception:
+            pass
+    return is_question_visible(question, conditions, responses)
+
+
 def sync_question_visibility_state(
     pages: list[dict[str, Any]],
     design_data: dict[str, Any],
     draft_responses: dict[str, str],
     session_state: dict[str, Any],
+    repo: Any | None = None,
+    company_id: str | None = None,
 ) -> None:
     previous_visible_question_ids = set(session_state.get("visible_question_ids", set()))
     previously_seen_question_ids = set(session_state.get("previously_seen_question_ids", set()))
@@ -211,7 +234,7 @@ def sync_question_visibility_state(
                 continue
 
             conditions = design_data["ConditionsByQuestion"].get(question_id, [])
-            is_visible = is_question_visible(question, conditions, draft_responses)
+            is_visible = resolve_question_visibility(repo, company_id, question, conditions, draft_responses)
             if is_visible:
                 current_visible_question_ids.add(question_id)
                 was_previously_seen = question_id in previously_seen_question_ids
@@ -482,7 +505,7 @@ def render_question_page(page: dict[str, Any], design_data: dict[str, Any], draf
     for question in page.get("Questions", []):
         question_id = question["QuestionID"]
         conditions = design_data["ConditionsByQuestion"].get(question_id, [])
-        if not is_question_visible(question, conditions, draft_responses):
+        if not resolve_question_visibility(None, None, question, conditions, draft_responses):
             continue
         options = sorted(
             design_data["OptionsByQuestion"].get(question_id, []),
@@ -579,7 +602,7 @@ def main() -> None:
     else:
         sync_widget_state_from_responses(draft_responses)
 
-    sync_question_visibility_state(pages, design_data, draft_responses, st.session_state)
+    sync_question_visibility_state(pages, design_data, draft_responses, st.session_state, repo=repo, company_id=identity["CompanyID"])
 
    #--------------------------------------------------
    # Create sidebar

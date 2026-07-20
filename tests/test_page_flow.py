@@ -262,7 +262,7 @@ def test_repository_refresh_question_visibility_updates_visible_field():
 
     repo.refresh_question_visibility("C001", repo.responses_for("C001"))
 
-    questions = repo.rows("Questions")
-    by_id = {row["QuestionID"]: row for row in questions}
+    visibility = repo.rows("QuestionVisibility")
+    by_id = {row["QuestionID"]: row for row in visibility if row.get("CompanyID") == "C001"}
     assert by_id["Q002"]["Visible"] == "TRUE"
     assert by_id["Q003"]["Visible"] == "FALSE"
