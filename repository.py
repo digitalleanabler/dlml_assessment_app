@@ -129,6 +129,9 @@ class SQLiteRepository:
             for sheet_name in SHEETS:
                 existing = conn.execute(f'SELECT COUNT(*) FROM "{sheet_name}"').fetchone()[0]
                 # !!!
+                print(f"Checked existing rows in {sheet_name}: {existing}. PRINTING FROM OUTSIDE DEBUG FUNCTION!!!")
+                sys.stdout.flush()
+
                 debug(f"Checked existing rows in {sheet_name}: {existing}.")
 
                 if existing:
