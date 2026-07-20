@@ -186,8 +186,9 @@ class SQLiteRepository:
                 connection.commit()
 
                 # !!!
-                st.info(f"Runtime rows for company '{company_id}' ensured successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-                
+                print(f"Runtime rows for company '{company_id}' ensured successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+                sys.stdout.flush()
+
         finally:
             if conn is None:
                 connection.close()
@@ -278,7 +279,8 @@ class SQLiteRepository:
             conn.commit()
 
             # !!!
-            st.info(f"Response for question '{question_id}' saved successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+            print(f"Response for question '{question_id}' saved successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+            sys.stdout.flush()
 
         self.clear_cache()
 
@@ -291,7 +293,8 @@ class SQLiteRepository:
             conn.commit()
             
             # !!!
-            st.info(f"Question visibility refreshed successfully for company '{company_id}'. at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+            print(f"Question visibility refreshed successfully for company '{company_id}'. at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+            sys.stdout.flush()
 
         self._design_cache = None
         self.clear_cache()
@@ -319,7 +322,8 @@ class SQLiteRepository:
                 connection.commit()
 
                 # !!!
-                st.info(f"Response history for question '{question_id}' appended successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+                print(f"Response history for question '{question_id}' appended successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+                sys.stdout.flush()
 
         finally:
             if conn is None:
@@ -406,11 +410,8 @@ class TursoRepository(SQLiteRepository):
         conn.commit()
 
         # !!!
-        #st.info(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
         print(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        #print("Hello from Streamlit Cloud")
         sys.stdout.flush()
-        #st.write("This shows in the app UI")
 
 
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
@@ -513,7 +514,8 @@ class TursoRepository(SQLiteRepository):
         conn.commit()
 
         # !!!
-        st.info(f"Response for question '{question_id}' saved successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+        print(f"Response for question '{question_id}' saved successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+        sys.stdout.flush()
 
         self.clear_cache()
 
@@ -527,7 +529,8 @@ class TursoRepository(SQLiteRepository):
             conn.commit()
 
             # !!!
-            st.info(f"Question visibility refreshed successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+            print(f"Question visibility refreshed successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+            sys.stdout.flush()
 
         finally:
             self._disconnect()
@@ -554,7 +557,8 @@ class TursoRepository(SQLiteRepository):
         conn.commit()
 
         # !!!
-        st.info(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+        print(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+        sys.stdout.flush()
 
         self.clear_cache()
 
