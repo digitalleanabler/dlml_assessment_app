@@ -406,8 +406,9 @@ class TursoRepository(SQLiteRepository):
         conn.commit()
 
         # !!!
-        st.info("Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-
+        st.info(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+        print(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+        
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
         attempt = 0
         while True:
