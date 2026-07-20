@@ -123,6 +123,39 @@ def test_question_visibility_state_preserves_hidden_answer_in_draft_and_widget_s
     assert session_state["answer_Q002"] == "previous answer"
 
 
+def test_sync_question_visibility_state_avoids_repository_refresh_for_live_page_updates():
+    class DummyRepo:
+        def __init__(self):
+            self.refresh_calls = 0
+
+        def refresh_question_visibility(self, company_id, responses):
+            self.refresh_calls += 1
+
+    pages = [
+        {
+            "PageID": "P001",
+            "Questions": [
+                {"QuestionID": "Q002", "QuestionText": "Dependent", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
+                {"QuestionID": "Q003", "QuestionText": "Follow-up", "AnswerType": "Choice", "Required": "TRUE", "Active": "TRUE"},
+            ],
+        }
+    ]
+    design_data = {
+        "ConditionsByQuestion": {
+            "Q003": [{"Seq": "1", "DependsOnQuestion": "Q002", "Operator": "=", "ExpectedValue": "ALL", "LogicalWithNext": "END"}],
+        },
+        "OptionsByQuestion": {},
+    }
+    draft_responses = {"Q002": "ALL"}
+    session_state = {"visible_question_ids": set(), "previously_seen_question_ids": set()}
+    repo = DummyRepo()
+
+    sync_question_visibility_state(pages, design_data, draft_responses, session_state, repo=repo, company_id="C001")
+
+    assert repo.refresh_calls == 0
+    assert session_state["visible_question_ids"] == {"Q002", "Q003"}
+
+
 def test_page_readiness_counts_only_visible_required_questions():
     questions = [
         {"QuestionID": "Q001", "QuestionText": "First", "Required": "TRUE", "Active": "TRUE"},

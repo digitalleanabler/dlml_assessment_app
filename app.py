@@ -228,12 +228,6 @@ def sync_question_visibility_state(
     repo: Any | None = None,
     company_id: str | None = None,
 ) -> None:
-    if repo is not None and company_id:
-        try:
-            repo.refresh_question_visibility(company_id, dict(draft_responses))
-        except Exception as exc:
-            print(f"Failed to refresh question visibility during sync: {exc}")
-
     previous_visible_question_ids = set(session_state.get("visible_question_ids", set()))
     previously_seen_question_ids = set(session_state.get("previously_seen_question_ids", set()))
     current_visible_question_ids: set[str] = set()
