@@ -12,6 +12,8 @@ from typing import Any
 
 import streamlit as st
 
+from datetime import datetime
+
 try:
     import libsql
 except Exception as exc:  # pragma: no cover - optional dependency for cloud mode
@@ -182,6 +184,10 @@ class SQLiteRepository:
                     connection.execute('INSERT INTO "Responses" ("CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime") VALUES (?, ?, ?, ?, ?)', (company_id, question_id, "", "", ""))
             if conn is None:
                 connection.commit()
+
+                # !!!
+                st.info(f"Runtime rows for company '{company_id}' ensured successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+                
         finally:
             if conn is None:
                 connection.close()
@@ -270,6 +276,10 @@ class SQLiteRepository:
             self._update_company_last_updated(company_id, stamp, conn=conn)
             self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
             conn.commit()
+
+            # !!!
+            st.info(f"Response for question '{question_id}' saved successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+
         self.clear_cache()
 
         return True
@@ -279,6 +289,10 @@ class SQLiteRepository:
         with self._connect() as conn:
             self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=current_responses, conn=conn)
             conn.commit()
+            
+            # !!!
+            st.info(f"Question visibility refreshed successfully for company '{company_id}'. at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+
         self._design_cache = None
         self.clear_cache()
         return current_responses
@@ -289,6 +303,10 @@ class SQLiteRepository:
             connection.execute('UPDATE "Companies" SET "LastUpdated" = ? WHERE "CompanyID" = ?', (stamp, company_id))
             if conn is None:
                 connection.commit()
+
+                # !!!
+                st.info(f"Company '{company_id}' last updated timestamp set to '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+
         finally:
             if conn is None:
                 connection.close()
@@ -299,6 +317,10 @@ class SQLiteRepository:
             connection.execute('INSERT INTO "ResponseHistory" ("CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?)', (company_id, question_id, old_value, new_value, email, stamp))
             if conn is None:
                 connection.commit()
+
+                # !!!
+                st.info(f"Response history for question '{question_id}' appended successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+
         finally:
             if conn is None:
                 connection.close()
@@ -382,6 +404,9 @@ class TursoRepository(SQLiteRepository):
                 values = [row.get(header, "") for header in headers]
                 conn.execute(insert_sql, values)
         conn.commit()
+
+        # !!!
+        st.info("Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
 
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
         attempt = 0
@@ -481,6 +506,10 @@ class TursoRepository(SQLiteRepository):
         self._update_company_last_updated(company_id, stamp, conn=conn)
         self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
         conn.commit()
+
+        # !!!
+        st.info(f"Response for question '{question_id}' saved successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+
         self.clear_cache()
 
         return True
@@ -491,6 +520,10 @@ class TursoRepository(SQLiteRepository):
         try:
             self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=current_responses, conn=conn)
             conn.commit()
+
+            # !!!
+            st.info(f"Question visibility refreshed successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+
         finally:
             self._disconnect()
 
@@ -514,6 +547,10 @@ class TursoRepository(SQLiteRepository):
         conn = self._connect()
         conn.execute('UPDATE "Companies" SET "Status" = ?, "LastUpdated" = ?, "SubmittedBy" = ?, "SubmittedTime" = ? WHERE "CompanyID" = ?', ("Submitted", stamp, email, stamp, company_id))
         conn.commit()
+
+        # !!!
+        st.info(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+
         self.clear_cache()
 
 
