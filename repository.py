@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
-
+import sys
 from datetime import datetime
 
 try:
@@ -408,7 +408,11 @@ class TursoRepository(SQLiteRepository):
         # !!!
         st.info(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
         print(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        
+        print("Hello from Streamlit Cloud")
+        sys.stdout.flush()
+        st.write("This shows in the app UI")
+
+
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
         attempt = 0
         while True:
