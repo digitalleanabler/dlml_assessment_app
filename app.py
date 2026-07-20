@@ -594,7 +594,8 @@ def main() -> None:
     
     ####################################################################################################
     # If already logged in
-    
+    import logging
+    logging.basicConfig(format="%(filename)s:%(lineno)d:%(funcName)s() - %(message)s", level=logging.DEBUG, force=True)
     # Prepare data
     identity = st.session_state.identity
     repo, demo_mode = get_repository()
