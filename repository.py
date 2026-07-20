@@ -419,8 +419,14 @@ class TursoRepository(SQLiteRepository):
             try:
                 self._connection.execute("SELECT 1")
                 # !!!
-                print(f"Reusing existing Turso connection at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.") 
+                print(f"Reusing existing Turso connection at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}. BEFORE USING DEBUG")
                 sys.stdout.flush()
+
+                debug(f"Reusing existing Turso connection. NOW USING DEBUG")
+
+
+
+
 
                 return self._connection
             except BaseException:
