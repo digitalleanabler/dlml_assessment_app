@@ -308,6 +308,20 @@ def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, An
         raise
 
 
+def refresh_company_state(repo: Any, company_id: str) -> Any | None:
+    if hasattr(repo, "clear_cache"):
+        try:
+            repo.clear_cache()
+        except Exception:
+            pass
+    if hasattr(repo, "load_login_data"):
+        try:
+            repo.load_login_data(force=True)
+        except Exception:
+            pass
+    return repo.company(company_id) if hasattr(repo, "company") else None
+
+
 def get_cached_responses(repo: Any, company_id: str, session_state: dict[str, Any]) -> dict[str, str]:
     cache_key = "responses_cache"
     if cache_key not in session_state:
@@ -586,15 +600,18 @@ def main() -> None:
     repo, demo_mode = get_repository()
     repo, demo_mode = ensure_repository(repo, st.secrets)
     try:
-        company = repo.company(identity["CompanyID"])
+        company = refresh_company_state(repo, identity["CompanyID"])
     except BaseException:
         get_repository.clear()
         repo, demo_mode = select_repository("", st.secrets)
-        company = repo.company(identity["CompanyID"])
+        company = refresh_company_state(repo, identity["CompanyID"])
     assert company
 
+    if identity.get("CompanyStatus") != company.get("Status"):
+        identity["CompanyStatus"] = company.get("Status")
+
     # Set readonly tag if company already submitted the form
-    readonly = company["Status"] == "Submitted"
+    readonly = str(company.get("Status", "")).strip().upper() == "SUBMITTED"
 
     #--------------------------------------------------
     # Create main page header

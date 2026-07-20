@@ -9,6 +9,7 @@ from app.app import (
     resolve_question_visibility,
     reload_page_responses_for_page,
     reload_responses_for_navigation,
+    refresh_company_state,
     save_page_questions,
     sync_draft_responses,
     sync_question_visibility_state,
@@ -178,6 +179,32 @@ def test_save_page_questions_uses_repository_state_when_local_snapshot_is_stale(
 
     assert saved_count == 1
     assert repo.saved == [("C001", "Q001", "local-value", "user@example.com")]
+
+
+def test_refresh_company_state_reloads_status_from_repository():
+    class DummyRepo:
+        def __init__(self):
+            self.calls = 0
+            self.clear_calls = 0
+            self._company = {"CompanyID": "C001", "Status": "Draft"}
+
+        def clear_cache(self):
+            self.clear_calls += 1
+
+        def load_login_data(self, force=False):
+            self.calls += 1
+
+        def company(self, company_id):
+            assert company_id == "C001"
+            return self._company
+
+    repo = DummyRepo()
+
+    company = refresh_company_state(repo, "C001")
+
+    assert company["Status"] == "Draft"
+    assert repo.clear_calls == 1
+    assert repo.calls == 1
 
 
 def test_page_readiness_counts_only_visible_required_questions():
