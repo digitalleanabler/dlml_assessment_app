@@ -406,11 +406,11 @@ class TursoRepository(SQLiteRepository):
         conn.commit()
 
         # !!!
-        st.info(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
+        #st.info(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
         print(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        print("Hello from Streamlit Cloud")
+        #print("Hello from Streamlit Cloud")
         sys.stdout.flush()
-        st.write("This shows in the app UI")
+        #st.write("This shows in the app UI")
 
 
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
