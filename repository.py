@@ -123,15 +123,11 @@ class SQLiteRepository:
                 columns = ", ".join(f'"{header}" TEXT' for header in headers)
                 conn.execute(f'CREATE TABLE IF NOT EXISTS "{sheet_name}" ({columns})')
                 # !!! 
-                print(f"CREATE TABLE IF NOT EXISTS {sheet_name} {columns} at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-                sys.stdout.flush()
+                debug(f"CREATE TABLE IF NOT EXISTS {sheet_name} {columns}.")
 
             for sheet_name in SHEETS:
                 existing = conn.execute(f'SELECT COUNT(*) FROM "{sheet_name}"').fetchone()[0]
                 # !!!
-                print(f"Checked existing rows in {sheet_name}: {existing}. PRINTING FROM OUTSIDE DEBUG FUNCTION!!!")
-                sys.stdout.flush()
-
                 debug(f"Checked existing rows in {sheet_name}: {existing}.")
 
                 if existing:
@@ -193,33 +189,28 @@ class SQLiteRepository:
                 visible_value = "TRUE" if visible else "FALSE"
                 existing_visibility = connection.execute('SELECT 1 FROM "QuestionVisibility" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
                 # !!!
-                print(f"Checked visibility for question '{question_id}' for company '{company_id}': {existing_visibility} at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")   
-                sys.stdout.flush()
+                debug(f"Checked visibility for question '{question_id}' for company '{company_id}': {existing_visibility}")
                 
                 if existing_visibility is None:
                     connection.execute('INSERT INTO "QuestionVisibility" ("CompanyID", "QuestionID", "Visible") VALUES (?, ?, ?)', (company_id, question_id, visible_value))
                     # !!!
-                    print(f"Inserted visibility for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-                    sys.stdout.flush()
+                    debug(f"Inserted visibility for question '{question_id}' for company '{company_id}'.")
 
                 else:
                     connection.execute('UPDATE "QuestionVisibility" SET "Visible" = ? WHERE "CompanyID" = ? AND "QuestionID" = ?', (visible_value, company_id, question_id))
                     # !!!
-                    print(f"Updated visibility for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-                    sys.stdout.flush()
+                    debug(f"Updated visibility for question '{question_id}' for company '{company_id}'.")
 
                 existing_response = connection.execute('SELECT 1 FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
                 if existing_response is None:
                     connection.execute('INSERT INTO "Responses" ("CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime") VALUES (?, ?, ?, ?, ?)', (company_id, question_id, "", "", ""))
                     # !!!
-                    print(f"Inserted response row for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-                    sys.stdout.flush()
+                    debug(f"Inserted response row for question '{question_id}' for company '{company_id}'.")
 
             if conn is None:
                 connection.commit()
                 # !!!
-                print(f"Runtime rows for company '{company_id}' ensured successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-                sys.stdout.flush()
+                debug(f"Runtime rows for company '{company_id}' ensured successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
 
         finally:
             if conn is None:
@@ -278,8 +269,7 @@ class SQLiteRepository:
         with self._connect() as conn:
             conn.execute(f'UPDATE "{worksheet}" SET "{header}" = ? WHERE rowid = ?', (value, row_number))
             # !!!
-            print(f"Updated '{header}' in '{worksheet}' at row {row_number} with value '{value}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-            sys.stdout.flush()
+            debug(f"Updated '{header}' in '{worksheet}' at row {row_number} with value '{value}'.")
 
     def company(self, company_id: str) -> dict[str, str] | None:
         self.load_login_data()
@@ -302,8 +292,7 @@ class SQLiteRepository:
             self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=self.responses_for(company_id), conn=conn)
             existing = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
             # !!!
-            print(f"Attempting to save response for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-            sys.stdout.flush()
+            debug(f"Attempting to save response for question '{question_id}' for company '{company_id}'.")
 
             old = existing[0] if existing else ""
             if old == value:
@@ -312,21 +301,18 @@ class SQLiteRepository:
             if existing:
                 conn.execute('UPDATE "Responses" SET "ResponseValue" = ?, "LastModifiedBy" = ?, "LastModifiedTime" = ? WHERE "CompanyID" = ? AND "QuestionID" = ?', (value, email, stamp, company_id, question_id))
                 # !!!
-                print(f"Updated response for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-                sys.stdout.flush()
+                debug(f"Updated response for question '{question_id}' for company '{company_id}'.")
 
             else:
                 conn.execute('INSERT INTO "Responses" ("CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime") VALUES (?, ?, ?, ?, ?)', (company_id, question_id, value, email, stamp))
                 # !!!
-                print(f"Inserted response for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-                sys.stdout.flush()
-                       
+                debug(f"Inserted response for question '{question_id}' for company '{company_id}'.")
+
             self._update_company_last_updated(company_id, stamp, conn=conn)
             self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
             conn.commit()
             # !!!
-            print(f"Response for question '{question_id}' saved successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-            sys.stdout.flush()
+            debug(f"Response for question '{question_id}' saved successfully for company '{company_id}'.")
 
         self.clear_cache()
 
@@ -338,8 +324,7 @@ class SQLiteRepository:
             self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=current_responses, conn=conn)
             conn.commit()
             # !!!
-            print(f"Question visibility refreshed successfully for company '{company_id}'. at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-            sys.stdout.flush()
+            debug(f"Question visibility refreshed successfully for company '{company_id}'.")
 
         self._design_cache = None
         self.clear_cache()
@@ -350,14 +335,12 @@ class SQLiteRepository:
         try:
             connection.execute('UPDATE "Companies" SET "LastUpdated" = ? WHERE "CompanyID" = ?', (stamp, company_id))
             # !!!
-            print(f"Company '{company_id}' last updated timestamp set to '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-            sys.stdout.flush()
+            debug(f"Company '{company_id}' last updated timestamp set to '{stamp}'.")
 
             if conn is None:
                 connection.commit()
                 # !!!
-                st.info(f"Company '{company_id}' last updated timestamp set to '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-                sys.stdout.flush()
+                debug(f"Company '{company_id}' last updated timestamp set to '{stamp}'.")
 
         finally:
             if conn is None:
@@ -370,8 +353,7 @@ class SQLiteRepository:
             if conn is None:
                 connection.commit()
                 # !!!
-                print(f"Response history for question '{question_id}' appended successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-                sys.stdout.flush()
+                debug(f"Response history for question '{question_id}' appended successfully for company '{company_id}'.")
 
         finally:
             if conn is None:
@@ -385,8 +367,7 @@ class SQLiteRepository:
         with self._connect() as conn:
             conn.execute('UPDATE "Companies" SET "Status" = ?, "LastUpdated" = ?, "SubmittedBy" = ?, "SubmittedTime" = ? WHERE "CompanyID" = ?', ("Submitted", stamp, email, stamp, company_id))
             # !!!
-            print(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-            sys.stdout.flush()
+            debug(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}'.")
         
         self.clear_cache()
 
@@ -419,14 +400,7 @@ class TursoRepository(SQLiteRepository):
             try:
                 self._connection.execute("SELECT 1")
                 # !!!
-                #print(f"Reusing existing Turso connection at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}. BEFORE USING DEBUG")
-                #sys.stdout.flush()
-
-                debug(f"Reusing existing Turso connection. NOW USING DEBUG")
-
-
-
-
+                debug(f"Reusing existing Turso connection.")
 
                 return self._connection
             except BaseException:
@@ -455,8 +429,7 @@ class TursoRepository(SQLiteRepository):
         for sheet_name in SHEETS:
             existing = int(conn.execute(f'SELECT COUNT(*) FROM "{sheet_name}"').fetchone()[0])
             # !!!
-            print(f"Found {existing} existing rows in '{sheet_name}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-            sys.stdout.flush()
+            debug(f"Found {existing} existing rows in '{sheet_name}'.")
 
             if existing:
                 continue
@@ -474,13 +447,11 @@ class TursoRepository(SQLiteRepository):
                 values = [row.get(header, "") for header in headers]
                 conn.execute(insert_sql, values)
                 # !!!
-                print(f"Inserted seed data into '{sheet_name}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-                sys.stdout.flush()
+                debug(f"Inserted seed data into '{sheet_name}'.")
 
         conn.commit()
         # !!!
-        print(f"Database schema initialized successfully in Turso at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        sys.stdout.flush()
+        debug(f"Database schema initialized successfully in Turso.")
 
 
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
@@ -570,8 +541,7 @@ class TursoRepository(SQLiteRepository):
         self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=self.responses_for(company_id), conn=conn)
         existing_row = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
         # !!!
-        print(f"Attempting to save response for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        sys.stdout.flush()
+        debug(f"Attempting to save response for question '{question_id}' for company '{company_id}'.")
 
         existing = existing_row[0] if existing_row else None
         old = existing or ""
@@ -581,21 +551,18 @@ class TursoRepository(SQLiteRepository):
         if existing is not None:
             conn.execute('UPDATE "Responses" SET "ResponseValue" = ?, "LastModifiedBy" = ?, "LastModifiedTime" = ? WHERE "CompanyID" = ? AND "QuestionID" = ?', (value, email, stamp, company_id, question_id))
             # !!!
-            print(f"Updated response for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-            sys.stdout.flush()        
+            debug(f"Updated response for question '{question_id}' for company '{company_id}'.")
         
         else:
             conn.execute('INSERT INTO "Responses" ("CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime") VALUES (?, ?, ?, ?, ?)', (company_id, question_id, value, email, stamp))
             # !!!
-            print(f"Inserted response for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-            sys.stdout.flush()
+            debug(f"Inserted response for question '{question_id}' for company '{company_id}'.")
         
         self._update_company_last_updated(company_id, stamp, conn=conn)
         self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
         conn.commit()
         # !!!
-        print(f"Response for question '{question_id}' saved successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        sys.stdout.flush()
+        debug(f"Response for question '{question_id}' saved successfully for company '{company_id}'.")
 
         self.clear_cache()
 
@@ -608,8 +575,7 @@ class TursoRepository(SQLiteRepository):
             self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=current_responses, conn=conn)
             conn.commit()
             # !!!
-            print(f"Question visibility refreshed successfully for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-            sys.stdout.flush()
+            debug(f"Question visibility refreshed successfully for company '{company_id}'.")
 
         finally:
             self._disconnect()
@@ -622,17 +588,13 @@ class TursoRepository(SQLiteRepository):
         connection = conn or self._connect()
         connection.execute('UPDATE "Companies" SET "LastUpdated" = ? WHERE "CompanyID" = ?', (stamp, company_id))
         # !!!
-        print(f"Company '{company_id}' last updated timestamp set to '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        sys.stdout.flush()
-
+        debug(f"Company '{company_id}' last updated timestamp set to '{stamp}'.")
 
     def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str, conn: Any | None = None) -> None:
         connection = conn or self._connect()
         connection.execute('INSERT INTO "ResponseHistory" ("CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?)', (company_id, question_id, old_value, new_value, email, stamp))
         # !!!
-        print(f"Response history appended for question '{question_id}' for company '{company_id}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        sys.stdout.flush()
-
+        debug(f"Response history appended for question '{question_id}' for company '{company_id}'.")
 
     def submit(self, company_id: str, email: str) -> None:
         company = self.company(company_id)
@@ -642,13 +604,11 @@ class TursoRepository(SQLiteRepository):
         conn = self._connect()
         conn.execute('UPDATE "Companies" SET "Status" = ?, "LastUpdated" = ?, "SubmittedBy" = ?, "SubmittedTime" = ? WHERE "CompanyID" = ?', ("Submitted", stamp, email, stamp, company_id))
         # !!!
-        print(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        sys.stdout.flush()
+        debug(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}'.")
 
         conn.commit()
         # !!!
-        print(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}' at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}.")
-        sys.stdout.flush()
+        debug(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}'.")
 
         self.clear_cache()
 
