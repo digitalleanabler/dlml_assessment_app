@@ -139,22 +139,28 @@ def _chunked(rows: list[tuple], size: int = _BULK_CHUNK_SIZE) -> list[list[tuple
 
 SEED: dict[str, list[dict[str, str]]] = {
     "Companies": [
-        {"CompanyID": "C001", "CompanyName": "Northwind Pumps", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
-        {"CompanyID": "C002", "CompanyName": "Contoso Manufacturing", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
+        {"CompanyID": "C001", "CompanyName": "SWAT in Dream", "Status": "Draft", "LastUpdated": "",  "SubmittedBy": "", "SubmittedTime": ""},
+        {"CompanyID": "C002", "CompanyName": "LAFD in Dream", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
     ],
     "Users": [
-        {"Email": "maya@northwind.example", "Name": "Maya Chen", "CompanyID": "C001"},
-        {"Email": "alex@northwind.example", "Name": "Alex Rivera", "CompanyID": "C001"},
-        {"Email": "sara@contoso.example", "Name": "Sara Kim", "CompanyID": "C002"},
+        {"Email": "tonytanakorn@gmail.com", "Name": "Tony", "CompanyID": "C001"},
+        {"Email": "digitalleanabler@gmail.com", "Name": "Leanabler", "CompanyID": "C001"},
+        {"Email": "hondo@gmail.com", "Name": "Hondo", "CompanyID": "C001"},
+        {"Email": "deac@gmail.com", "Name": "Deacon", "CompanyID": "C001"},
+        {"Email": "tanakorn.tan@nectec.or.th", "Name": "Tanakorn", "CompanyID": "C002"},
+        {"Email": "toneiam@gmail.com", "Name": "Eiam", "CompanyID": "C002"},
+        {"Email": "bobby@gmail.com", "Name": "Bobby", "CompanyID": "C002"},
+        {"Email": "buck@gmail.com", "Name": "Buck", "CompanyID": "C002"},
     ],
     "Pages": [
-        {"PageID": "P001", "PageTitle": "Business Goal"},
-        {"PageID": "P002", "PageTitle": "Business Objectives"},
+        {"PageID": "P001", "PageTitle": "???"},
+        {"PageID": "P002", "PageTitle": "???"},
+        {"PageID": "P003", "PageTitle": "???"},
     ],
     "Questions": [
-        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "Describe your products?", "AnswerType": "Text", "Required": "TRUE"},
-        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "Lean implementation level?", "AnswerType": "Choice", "Required": "TRUE"},
-        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "TPM implemented?", "AnswerType": "Choice", "Required": "TRUE"},
+        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "???", "AnswerType": "Text", "Required": "TRUE"},
+        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "???", "AnswerType": "Choice", "Required": "TRUE"},
+        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "???", "AnswerType": "Choice", "Required": "TRUE"},
     ],
     "QuestionOptions": [
         {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "None"},
@@ -208,7 +214,6 @@ class SQLiteRepository:
                 f'CREATE UNIQUE INDEX IF NOT EXISTS "idx_{table.lower()}_company_question" '
                 f'ON "{table}" ("CompanyID", "QuestionID")'
             )
-            # !!!
             debug(f"Ensured UNIQUE(CompanyID, QuestionID) index on '{table}'.")
 
     def ping(self) -> None:
@@ -218,6 +223,7 @@ class SQLiteRepository:
         reachable on every rerun, not just the first one this process."""
         with self._connect() as conn:
             conn.execute("SELECT 1")
+            debug(f"Pinged database at {self.database_path} successfully.")
 
     def _initialize_schema(self) -> None:
         with self._connect() as conn:
@@ -227,14 +233,12 @@ class SQLiteRepository:
                     continue
                 columns = ", ".join(f'"{header}" TEXT' for header in headers)
                 conn.execute(f'CREATE TABLE IF NOT EXISTS "{sheet_name}" ({columns})')
-                # !!! 
-                debug(f"CREATE TABLE IF NOT EXISTS {sheet_name} {columns}.")
+                debug(f"Ensured table '{sheet_name}' exists with columns: {headers}.")
 
             self._ensure_unique_indexes(conn)
 
             for sheet_name in SHEETS:
                 existing = conn.execute(f'SELECT COUNT(*) FROM "{sheet_name}"').fetchone()[0]
-                # !!!
                 debug(f"Checked existing rows in {sheet_name}: {existing}.")
 
                 if existing:
@@ -252,7 +256,6 @@ class SQLiteRepository:
                 for row in seed_rows:
                     values = [row.get(header, "") for header in headers]
                     conn.execute(insert_sql, values)
-                    # !!!
                     debug(f"Inserted seed data into {sheet_name}: {values}.")
 
     def _rows_for_sheet(self, worksheet: str) -> list[dict[str, str]]:
@@ -304,7 +307,6 @@ class SQLiteRepository:
                     'ON CONFLICT("CompanyID", "QuestionID") DO UPDATE SET "Visible" = excluded."Visible"',
                     (company_id, question_id, visible_value),
                 )
-                # !!!
                 debug(f"Upserted visibility for question '{question_id}' for company '{company_id}'.")
 
                 # Only ensures a placeholder response row exists (blank value); an
@@ -317,12 +319,10 @@ class SQLiteRepository:
                     'ON CONFLICT("CompanyID", "QuestionID") DO NOTHING',
                     (company_id, question_id, "", "", ""),
                 )
-                # !!!
                 debug(f"Ensured response row exists for question '{question_id}' for company '{company_id}'.")
 
             if conn is None:
                 connection.commit()
-                # !!!
                 debug(f"Runtime rows for company '{company_id}' ensured successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
 
         finally:
@@ -381,7 +381,6 @@ class SQLiteRepository:
     def _write_value(self, worksheet: str, row_number: int, header: str, value: str) -> None:
         with self._connect() as conn:
             conn.execute(f'UPDATE "{worksheet}" SET "{header}" = ? WHERE rowid = ?', (value, row_number))
-            # !!!
             debug(f"Updated '{header}' in '{worksheet}' at row {row_number} with value '{value}'.")
 
     def company(self, company_id: str) -> dict[str, str] | None:
@@ -499,7 +498,6 @@ class SQLiteRepository:
                 update_columns=["ResponseValue", "LastModifiedBy", "LastModifiedTime"],
                 rows=response_rows,
             )
-            # !!!
             debug(f"Batched upsert of {len(response_rows)} response(s) for company '{company_id}'.")
 
             if visibility_diff:
@@ -511,7 +509,6 @@ class SQLiteRepository:
                     update_columns=["Visible"],
                     rows=visibility_rows,
                 )
-                # !!!
                 debug(f"Batched upsert of {len(visibility_rows)} visibility row(s) for company '{company_id}'.")
 
             history_rows = [
@@ -523,12 +520,10 @@ class SQLiteRepository:
                 columns=["CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime"],
                 rows=history_rows,
             )
-            # !!!
             debug(f"Batched insert of {len(history_rows)} history row(s) for company '{company_id}'.")
 
             self._update_company_last_updated(company_id, stamp, conn=conn)
             conn.commit()
-            # !!!
             debug(f"save_responses committed {len(actual_changes)} changed response(s) for company '{company_id}'.")
 
         # No clear_cache() here: Responses/QuestionVisibility were never in the cached
@@ -551,9 +546,7 @@ class SQLiteRepository:
         with self._connect() as conn:
             self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=self.responses_for(company_id), conn=conn)
             existing = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
-            # !!!
             debug(f"Attempting to save response for question '{question_id}' for company '{company_id}'.")
-
             old = existing[0] if existing else ""
             if old == value:
                 return False
@@ -570,17 +563,12 @@ class SQLiteRepository:
                 '"LastModifiedTime" = excluded."LastModifiedTime"',
                 (company_id, question_id, value, email, stamp),
             )
-            # !!!
             debug(f"Upserted response for question '{question_id}' for company '{company_id}'.")
-
             self._update_company_last_updated(company_id, stamp, conn=conn)
             self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
             conn.commit()
-            # !!!
             debug(f"Response for question '{question_id}' saved successfully for company '{company_id}'.")
-
         self.clear_cache()
-
         return True
 
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
@@ -598,9 +586,7 @@ class SQLiteRepository:
         with self._connect() as conn:
             self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=current_responses, conn=conn)
             conn.commit()
-            # !!!
             debug(f"Question visibility refreshed successfully for company '{company_id}'.")
-
         self._design_cache = None
         self.clear_cache()
         return current_responses
@@ -673,7 +659,6 @@ class SQLiteRepository:
                     rows=chunk,
                 )
             conn.commit()
-            # !!!
             debug(f"Bulk-initialized visibility for {len(companies)} companies x {len(questions)} questions in {len(_chunked(visibility_rows)) + len(_chunked(response_seed_rows))} batched statement(s).")
 
         self._design_cache = None
@@ -683,14 +668,10 @@ class SQLiteRepository:
         connection = conn or self._connect()
         try:
             connection.execute('UPDATE "Companies" SET "LastUpdated" = ? WHERE "CompanyID" = ?', (stamp, company_id))
-            # !!!
             debug(f"Company '{company_id}' last updated timestamp set to '{stamp}'.")
-
             if conn is None:
                 connection.commit()
-                # !!!
                 debug(f"Company '{company_id}' last updated timestamp set to '{stamp}'.")
-
         finally:
             if conn is None:
                 connection.close()
@@ -701,9 +682,7 @@ class SQLiteRepository:
             connection.execute('INSERT INTO "ResponseHistory" ("CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?)', (company_id, question_id, old_value, new_value, email, stamp))
             if conn is None:
                 connection.commit()
-                # !!!
                 debug(f"Response history for question '{question_id}' appended successfully for company '{company_id}'.")
-
         finally:
             if conn is None:
                 connection.close()
@@ -715,9 +694,7 @@ class SQLiteRepository:
         stamp = now()
         with self._connect() as conn:
             conn.execute('UPDATE "Companies" SET "Status" = ?, "LastUpdated" = ?, "SubmittedBy" = ?, "SubmittedTime" = ? WHERE "CompanyID" = ?', ("Submitted", stamp, email, stamp, company_id))
-            # !!!
-            debug(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}'.")
-        
+            debug(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}'.") 
         self.clear_cache()
 
 
@@ -755,9 +732,7 @@ class TursoRepository(SQLiteRepository):
         if conn is not None:
             try:
                 conn.execute("SELECT 1")
-                # !!!
                 debug(f"Reusing existing Turso connection for thread {threading.get_ident()}.")
-
                 return conn
             except BaseException:
                 self._disconnect()
@@ -790,14 +765,12 @@ class TursoRepository(SQLiteRepository):
                 continue
             columns = ", ".join(f'"{header}" TEXT' for header in headers)
             conn.execute(f'CREATE TABLE IF NOT EXISTS "{sheet_name}" ({columns})')
-
+            debug(f"Ensured table '{sheet_name}' exists with columns: {headers}.")
         self._ensure_unique_indexes(conn)
 
         for sheet_name in SHEETS:
             existing = int(conn.execute(f'SELECT COUNT(*) FROM "{sheet_name}"').fetchone()[0])
-            # !!!
             debug(f"Found {existing} existing rows in '{sheet_name}'.")
-
             if existing:
                 continue
             if sheet_name in {"Responses", "ResponseHistory"}:
@@ -813,11 +786,8 @@ class TursoRepository(SQLiteRepository):
             for row in seed_rows:
                 values = [row.get(header, "") for header in headers]
                 conn.execute(insert_sql, values)
-                # !!!
                 debug(f"Inserted seed data into '{sheet_name}'.")
-
         conn.commit()
-        # !!!
         debug(f"Database schema initialized successfully in Turso.")
 
 
@@ -1003,7 +973,6 @@ class TursoRepository(SQLiteRepository):
             update_columns=["ResponseValue", "LastModifiedBy", "LastModifiedTime"],
             rows=response_rows,
         )
-        # !!!
         debug(f"Batched upsert of {len(response_rows)} response(s) for company '{company_id}'.")
 
         if visibility_diff:
@@ -1015,7 +984,6 @@ class TursoRepository(SQLiteRepository):
                 update_columns=["Visible"],
                 rows=visibility_rows,
             )
-            # !!!
             debug(f"Batched upsert of {len(visibility_rows)} visibility row(s) for company '{company_id}'.")
 
         history_rows = [
@@ -1027,12 +995,9 @@ class TursoRepository(SQLiteRepository):
             columns=["CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime"],
             rows=history_rows,
         )
-        # !!!
         debug(f"Batched insert of {len(history_rows)} history row(s) for company '{company_id}'.")
-
         self._update_company_last_updated(company_id, stamp, conn=conn)
         conn.commit()
-        # !!!
         debug(f"save_responses committed {len(actual_changes)} changed response(s) for company '{company_id}'.")
 
         # No clear_cache()/disconnect here: keeps the persistent Turso connection alive
@@ -1054,7 +1019,6 @@ class TursoRepository(SQLiteRepository):
         conn = self._connect()
         self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=self.responses_for(company_id), conn=conn)
         existing_row = conn.execute('SELECT "ResponseValue" FROM "Responses" WHERE "CompanyID" = ? AND "QuestionID" = ?', (company_id, question_id)).fetchone()
-        # !!!
         debug(f"Attempting to save response for question '{question_id}' for company '{company_id}'.")
 
         existing = existing_row[0] if existing_row else None
@@ -1075,15 +1039,11 @@ class TursoRepository(SQLiteRepository):
             '"LastModifiedTime" = excluded."LastModifiedTime"',
             (company_id, question_id, value, email, stamp),
         )
-        # !!!
         debug(f"Upserted response for question '{question_id}' for company '{company_id}'.")
-
         self._update_company_last_updated(company_id, stamp, conn=conn)
         self.append_response_history(company_id, question_id, old, value, email, stamp, conn=conn)
         conn.commit()
-        # !!!
         debug(f"Response for question '{question_id}' saved successfully for company '{company_id}'.")
-
         self.clear_cache()
 
         return True
@@ -1105,9 +1065,7 @@ class TursoRepository(SQLiteRepository):
         try:
             self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=current_responses, conn=conn)
             conn.commit()
-            # !!!
             debug(f"Question visibility refreshed successfully for company '{company_id}'.")
-
         finally:
             self._disconnect()
 
@@ -1175,22 +1133,18 @@ class TursoRepository(SQLiteRepository):
                 rows=chunk,
             )
         conn.commit()
-        # !!!
         debug(f"Bulk-initialized visibility for {len(companies)} companies x {len(questions)} questions in {len(_chunked(visibility_rows)) + len(_chunked(response_seed_rows))} batched statement(s).")
-
         self._design_cache = None
         self.clear_cache()
 
     def _update_company_last_updated(self, company_id: str, stamp: str, conn: Any | None = None) -> None:
         connection = conn or self._connect()
         connection.execute('UPDATE "Companies" SET "LastUpdated" = ? WHERE "CompanyID" = ?', (stamp, company_id))
-        # !!!
         debug(f"Company '{company_id}' last updated timestamp set to '{stamp}'.")
 
     def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str, conn: Any | None = None) -> None:
         connection = conn or self._connect()
         connection.execute('INSERT INTO "ResponseHistory" ("CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime") VALUES (?, ?, ?, ?, ?, ?)', (company_id, question_id, old_value, new_value, email, stamp))
-        # !!!
         debug(f"Response history appended for question '{question_id}' for company '{company_id}'.")
 
     def submit(self, company_id: str, email: str) -> None:
@@ -1200,13 +1154,9 @@ class TursoRepository(SQLiteRepository):
         stamp = now()
         conn = self._connect()
         conn.execute('UPDATE "Companies" SET "Status" = ?, "LastUpdated" = ?, "SubmittedBy" = ?, "SubmittedTime" = ? WHERE "CompanyID" = ?', ("Submitted", stamp, email, stamp, company_id))
-        # !!!
         debug(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}'.")
-
         conn.commit()
-        # !!!
         debug(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}'.")
-
         self.clear_cache()
 
 
