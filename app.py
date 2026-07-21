@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import streamlit as st
@@ -17,14 +19,31 @@ st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layo
 
 
 # Function to initialize host-level visibility for all companies
-_HOST_VISIBILITY_INITIALIZED = False
 def initialize_host_visibility(repo: Any) -> bool:
-    global _HOST_VISIBILITY_INITIALIZED
-    if _HOST_VISIBILITY_INITIALIZED:
+    # Tracked as an attribute on the repo instance itself, not a module-level
+    # global. A fresh instance (e.g. after a connection-recovery repo swap via
+    # select_repository()) will not have this attribute set, so it correctly
+    # re-runs bootstrap on the replacement repo instead of silently skipping it
+    # because some *earlier* instance had already run once.
+    if getattr(repo, "_host_visibility_initialized", False):
         return False
 
+    # Step 4.7: prefer the batched bulk bootstrap - a small, constant number of
+    # statements regardless of companies x questions - when the repository supports
+    # it. Fall back to the old per-company loop only for repositories with no
+    # network/disk round-trip cost to optimize away in the first place
+    # (InMemoryRepository, GoogleSheetsRepository).
+    if hasattr(repo, "initialize_all_visibility"):
+        try:
+            repo.initialize_all_visibility()
+            repo._host_visibility_initialized = True
+            return True
+        except Exception as exc:
+            print(f"Bulk host-level visibility initialization failed: {exc}")
+            return False
+
     if not hasattr(repo, "refresh_question_visibility"):
-        _HOST_VISIBILITY_INITIALIZED = True
+        repo._host_visibility_initialized = True
         return False
 
     try:
@@ -36,7 +55,7 @@ def initialize_host_visibility(repo: Any) -> bool:
             responses = repo.responses_for(company_id) if hasattr(repo, "responses_for") else {}
             repo.refresh_question_visibility(company_id, responses)
 
-        _HOST_VISIBILITY_INITIALIZED = True
+        repo._host_visibility_initialized = True
         return True
     except Exception as exc:
         print(f"Host-level visibility initialization failed: {exc}")
@@ -114,7 +133,14 @@ def get_repository() -> tuple[Any, bool]:
 
 def ensure_repository(repo: Any, secrets: Any | None = None) -> tuple[Any, bool]:
     try:
-        repo.design_data()
+        # Fix 4: design_data() is cached after its first successful call, so on
+        # every later rerun this used to be a no-op that verified nothing. ping()
+        # always performs a real, cheap round trip (SELECT 1) so connectivity is
+        # actually re-checked every rerun, not just the first one this process.
+        if hasattr(repo, "ping"):
+            repo.ping()
+        else:
+            repo.design_data()
         return repo, False
     except BaseException as exc:
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):
@@ -136,7 +162,25 @@ def ensure_repository(repo: Any, secrets: Any | None = None) -> tuple[Any, bool]
                 get_repository.clear()
             except Exception:
                 pass
-        return select_repository("", secrets)
+        new_repo, demo_mode = select_repository("", secrets)
+        initialize_host_visibility(new_repo)
+        return new_repo, demo_mode
+
+
+def _is_valid_number(text: str) -> bool:
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_valid_date(text: str) -> bool:
+    try:
+        datetime.strptime(text, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
 
 
 def value_input(question: dict[str, str], options: list[dict[str, str]], current: str, disabled: bool, draft_responses: dict[str, str]) -> str:
@@ -171,9 +215,17 @@ def value_input(question: dict[str, str], options: list[dict[str, str]], current
         else:
             value = widget_state
 
-    if str(value) != str(current):
-        protected_question_ids = st.session_state.setdefault("protected_question_ids", set())
-        protected_question_ids.add(question_id)
+    # Fix 6: NUMBER/DATE previously had no format validation at all - any string
+    # would be silently stored and saved. This is advisory only (it does not block
+    # entry or saving) so it doesn't change save/visibility behavior, but it gives
+    # the person immediate feedback on a likely-malformed answer instead of the bad
+    # value going unnoticed until someone reads it downstream.
+    stripped_value = str(value).strip()
+    if not disabled and stripped_value:
+        if kind == "NUMBER" and not _is_valid_number(stripped_value):
+            st.caption(":red[This doesn't look like a valid number.]")
+        elif kind == "DATE" and not _is_valid_date(stripped_value):
+            st.caption(":red[Enter the date as YYYY-MM-DD.]")
 
     draft_responses[question_id] = value
     return value
@@ -183,117 +235,125 @@ def clear_answer_widgets() -> None:
     for key in list(st.session_state):
         if key.startswith("answer_"):
             del st.session_state[key]
-    st.session_state.pop("responses_cache", None)
-    st.session_state.pop("page_draft_responses", None)
-    st.session_state.pop("saved_responses", None)
+    st.session_state.pop("page_session", None)
     st.session_state.pop("active_page_id", None)
     st.session_state.pop("sidebar_page_selection", None)
-    st.session_state.pop("protected_question_ids", None)
-    st.session_state.pop("visible_question_ids", None)
-    st.session_state.pop("previously_seen_question_ids", None)
 
 
-def resolve_question_visibility(
-    repo: Any | None,
-    company_id: str | None,
-    question: dict[str, Any],
-    conditions: list[dict[str, Any]],
-    responses: dict[str, str],
-    *,
-    use_repository_visibility: bool = False,
-) -> bool:
-    visible_by_condition = is_question_visible(question, conditions, responses)
-    if not use_repository_visibility:
-        return visible_by_condition
+@dataclass
+class PageSession:
+    """Step 4.6: single source of truth for page-level response/visibility state,
+    replacing the previously-fragmented page_draft_responses / responses_cache /
+    saved_responses / protected_question_ids / visible_question_ids /
+    previously_seen_question_ids session_state keys and the five functions
+    (merge_responses_with_repository, sync_widget_state_from_responses,
+    reload_page_responses, reload_page_responses_for_page,
+    reload_responses_for_navigation, sync_question_visibility_state) that used to
+    coordinate them independently.
 
-    question_id = str(question.get("QuestionID", "") or "").strip()
-    if repo is not None and company_id and question_id:
-        try:
-            visibility_rows = repo.rows("QuestionVisibility") if hasattr(repo, "rows") else []
-            for row in visibility_rows:
-                if str(row.get("CompanyID", "") or "").strip() == str(company_id) and str(row.get("QuestionID", "") or "").strip() == question_id:
-                    value = str(row.get("Visible", "") or "").strip().upper()
-                    if value in {"TRUE", "FALSE"}:
-                        return visible_by_condition and value == "TRUE"
-        except Exception:
-            pass
-    return visible_by_condition
+    - `responses` is the authoritative in-memory answer set (source of truth for the
+      whole session - covers Requirement 3/4's "retain answer when hidden, restore
+      when visible again" for free, since a hidden question's value simply stays in
+      this dict untouched until it's rendered again).
+    - `saved_snapshot` is the last value we know to be persisted in the DB (from a
+      scoped load or a save), used only to figure out which questions are "dirty"
+      (edited locally but not yet written back).
+    - `visibility` is recomputed every rerun as a pure function of `responses` (4.2)
+      and is never read back from the DB.
+    """
 
+    responses: dict[str, str] = field(default_factory=dict)
+    saved_snapshot: dict[str, str] = field(default_factory=dict)
+    visibility: dict[str, bool] = field(default_factory=dict)
+    loaded: bool = False
 
-def sync_question_visibility_state(
-    pages: list[dict[str, Any]],
-    design_data: dict[str, Any],
-    draft_responses: dict[str, str],
-    session_state: dict[str, Any],
-    repo: Any | None = None,
-    company_id: str | None = None,
-) -> None:
-    previous_visible_question_ids = set(session_state.get("visible_question_ids", set()))
-    previously_seen_question_ids = set(session_state.get("previously_seen_question_ids", set()))
-    current_visible_question_ids: set[str] = set()
-    protected_question_ids = set(session_state.setdefault("protected_question_ids", set()))
+    def dirty_ids(self) -> set[str]:
+        """Questions whose in-memory value differs from the last known persisted
+        value - i.e. unsaved local edits that must never be clobbered by a refresh."""
+        return {
+            question_id
+            for question_id, value in self.responses.items()
+            if str(value) != str(self.saved_snapshot.get(question_id, ""))
+        }
 
-    for page in pages:
-        for question in page.get("Questions", []):
+    def capture_widgets(self, questions: list[dict[str, str]], session_state: dict[str, Any]) -> None:
+        """Pull whatever Streamlit already has in session_state for these questions'
+        widgets into `responses`. Must run before any DB read this rerun, so an
+        in-progress edit is captured before we ask "is this dirty?"."""
+        for question in questions:
             question_id = str(question.get("QuestionID", "") or "").strip()
             if not question_id:
                 continue
+            key = f"answer_{question_id}"
+            if key in session_state:
+                value = session_state[key]
+                if isinstance(value, tuple):
+                    value = value[0]
+                self.responses[question_id] = value
 
-            conditions = design_data["ConditionsByQuestion"].get(question_id, [])
-            is_visible = resolve_question_visibility(repo, company_id, question, conditions, draft_responses)
-            if is_visible:
-                current_visible_question_ids.add(question_id)
-                was_previously_seen = question_id in previously_seen_question_ids
-                previously_seen_question_ids.add(question_id)
-                if was_previously_seen and question_id not in previous_visible_question_ids:
-                    answer_key = f"answer_{question_id}"
-                    current_answer = session_state.get(answer_key)
-                    if current_answer is not None:
-                        normalized_answer = current_answer[0] if isinstance(current_answer, tuple) else current_answer
-                        if str(normalized_answer).strip():
-                            draft_responses[question_id] = normalized_answer
-                            session_state[answer_key] = current_answer
-                        else:
-                            draft_responses[question_id] = ""
-                            session_state[answer_key] = ""
-                    else:
-                        draft_responses[question_id] = ""
-                        session_state[answer_key] = ""
-                    protected_question_ids.add(question_id)
-            else:
-                if question_id in previous_visible_question_ids and question_id in draft_responses:
-                    preserved_answer = draft_responses.get(question_id, "")
-                    if str(preserved_answer).strip():
-                        session_state[f"answer_{question_id}"] = preserved_answer
-                        protected_question_ids.add(question_id)
-                    else:
-                        session_state.pop(f"answer_{question_id}", None)
-                        protected_question_ids.discard(question_id)
-                else:
-                    session_state.pop(f"answer_{question_id}", None)
-                    protected_question_ids.discard(question_id)
+    def refresh_from_repository(self, repo: Any, company_id: str, session_state: dict[str, Any], *, force: bool = False) -> dict[str, str]:
+        """Load-on-entry (Requirement 3/4): one scoped read (4.5) of this company's
+        responses. A question that's currently dirty (unsaved local edit) keeps its
+        local value unless `force` is set (initial load / explicit reload button); a
+        concurrent edit from another user is still picked up into `saved_snapshot` so
+        dirtiness stays correct against the newest baseline either way. Any value that
+        *is* refreshed here is written straight into the widget's session_state key
+        too - a lingering widget key from a previous visit to this page would
+        otherwise shadow it, since Streamlit only seeds a widget's default when its
+        key is absent."""
+        refreshed = dict(repo.responses_for(company_id))
+        dirty = set() if force else self.dirty_ids()
+        for question_id, value in refreshed.items():
+            if force or question_id not in dirty:
+                self.responses[question_id] = value
+                session_state[f"answer_{question_id}"] = value
+        self.saved_snapshot = refreshed
+        self.loaded = True
+        return refreshed
 
-    session_state["visible_question_ids"] = current_visible_question_ids
-    session_state["previously_seen_question_ids"] = previously_seen_question_ids
-    session_state["protected_question_ids"] = protected_question_ids
+    def recompute_visibility(self, all_questions: list[dict[str, str]], conditions_by_question: dict[str, list[dict[str, Any]]]) -> dict[str, bool]:
+        """Preserve-on-hide (UX spec): visibility is a pure function of the in-memory
+        `responses` dict - never read back from the DB (4.2). QuestionVisibility in
+        the database stays a write-only persisted snapshot for external
+        consumers/audit."""
+        visibility: dict[str, bool] = {}
+        for question in all_questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            conditions = conditions_by_question.get(question_id, [])
+            visibility[question_id] = is_question_visible(question, conditions, self.responses)
+        self.visibility = visibility
+        return visibility
+
+    def clear_hidden_widgets(self, all_questions: list[dict[str, str]], session_state: dict[str, Any]) -> None:
+        """Drop the widget key for any currently-hidden question, so if it becomes
+        visible again it re-seeds from `responses` (the authoritative value) rather
+        than showing whatever stale value Streamlit last held under that key."""
+        for question in all_questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if question_id and not self.visibility.get(question_id, True):
+                session_state.pop(f"answer_{question_id}", None)
+
+    def save_to_repository(self, repo: Any, company_id: str, email: str, questions: list[dict[str, str]], session_state: dict[str, Any]) -> int:
+        """Save-on-exit: capture the latest widget edits, diff against the last known
+        persisted snapshot restricted to this set of questions, and write the whole
+        batch in one call (4.3/4.4)."""
+        self.capture_widgets(questions, session_state)
+        page_question_ids = {str(question["QuestionID"]) for question in questions if question.get("QuestionID")}
+        changes = {question_id: self.responses[question_id] for question_id in self.dirty_ids() & page_question_ids}
+        if not changes:
+            return 0
+        saved_count = repo.save_responses(company_id, changes, email)
+        for question_id, value in changes.items():
+            self.saved_snapshot[question_id] = value
+        return saved_count
 
 
-def sync_widget_state_from_responses(
-    responses: dict[str, str],
-    *,
-    force: bool = False,
-    protected_question_ids: set[str] | None = None,
-) -> None:
-    protected = set(protected_question_ids or set())
-    for question_id, value in responses.items():
-        key = f"answer_{question_id}"
-        if force:
-            st.session_state[key] = value
-            continue
-        if question_id in protected:
-            continue
-        if key not in st.session_state:
-            st.session_state[key] = value
+def get_page_session(session_state: dict[str, Any]) -> PageSession:
+    if "page_session" not in session_state:
+        session_state["page_session"] = PageSession()
+    return session_state["page_session"]
 
 
 def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, Any | None]:
@@ -309,6 +369,21 @@ def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, An
 
 
 def refresh_company_state(repo: Any, company_id: str) -> Any | None:
+    # Every rerun (any widget interaction) used to call clear_cache(), wiping the
+    # app-level (Pages/Questions/...) and session-level (Companies/Users) tiers even
+    # though only "has this company's Status changed" needs checking here. That forced
+    # a full static-table + full-table Companies/Users reload on every click.
+    # We only actually need Status/SubmittedBy/SubmittedTime, so use the narrow,
+    # WHERE-scoped read instead and leave the static/session caches alone.
+    if hasattr(repo, "company_status"):
+        try:
+            status_row = repo.company_status(company_id)
+            if status_row is not None:
+                return status_row
+        except Exception:
+            pass
+
+    # Fallback for any repository that doesn't implement the scoped read.
     if hasattr(repo, "clear_cache"):
         try:
             repo.clear_cache()
@@ -320,13 +395,6 @@ def refresh_company_state(repo: Any, company_id: str) -> Any | None:
         except Exception:
             pass
     return repo.company(company_id) if hasattr(repo, "company") else None
-
-
-def get_cached_responses(repo: Any, company_id: str, session_state: dict[str, Any]) -> dict[str, str]:
-    cache_key = "responses_cache"
-    if cache_key not in session_state:
-        session_state[cache_key] = dict(repo.responses_for(company_id))
-    return dict(session_state[cache_key])
 
 
 def build_page_structure(design_data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -356,17 +424,15 @@ def build_page_structure(design_data: dict[str, Any]) -> list[dict[str, Any]]:
 
 def get_missing_required_questions(
     questions: list[dict[str, str]],
-    conditions_by_question: dict[str, list[dict[str, Any]]],
+    visibility: dict[str, bool],
     responses: dict[str, str],
-    repo: Any | None = None,
-    company_id: str | None = None,
 ) -> list[str]:
     missing: list[str] = []
     for question in questions:
-        question_id = question["QuestionID"]
+        question_id = str(question["QuestionID"])
         if str(question.get("Required", "")).upper() != "TRUE":
             continue
-        if not resolve_question_visibility(repo, company_id, question, conditions_by_question.get(question_id, []), responses, use_repository_visibility=True):
+        if not visibility.get(question_id, True):
             continue
         value = responses.get(question_id, "")
         if not str(value).strip():
@@ -376,19 +442,17 @@ def get_missing_required_questions(
 
 def get_page_readiness(
     questions: list[dict[str, str]],
-    conditions_by_question: dict[str, list[dict[str, Any]]],
+    visibility: dict[str, bool],
     responses: dict[str, str],
-    repo: Any | None = None,
-    company_id: str | None = None,
 ) -> dict[str, Any]:
     answered = 0
     total = 0
     missing: list[str] = []
     for question in questions:
-        question_id = question["QuestionID"]
+        question_id = str(question["QuestionID"])
         if str(question.get("Required", "")).upper() != "TRUE":
             continue
-        if not resolve_question_visibility(repo, company_id, question, conditions_by_question.get(question_id, []), responses, use_repository_visibility=True):
+        if not visibility.get(question_id, True):
             continue
         total += 1
         value = str(responses.get(question_id, "") or "").strip()
@@ -399,156 +463,22 @@ def get_page_readiness(
     return {"answered": answered, "total": total, "completed": answered == total, "missing": missing}
 
 
-def merge_responses_with_repository(current: dict[str, str], refreshed: dict[str, str], saved: dict[str, str], protected_question_ids: set[str] | None = None) -> dict[str, str]:
-    merged = dict(current)
-    protected = protected_question_ids or set()
-    for question_id, value in refreshed.items():
-        current_value = merged.get(question_id, "")
-        saved_value = saved.get(question_id, "")
-        if question_id in protected:
-            continue
-        if str(current_value).strip() and str(current_value) != str(saved_value):
-            continue
-        merged[question_id] = value
-    return merged
-
-
-def sync_draft_responses(repo: Any, company_id: str, draft_responses: dict[str, str]) -> dict[str, str]:
-    refreshed = dict(repo.responses_for(company_id))
-    saved = dict(st.session_state.get("saved_responses", {}))
-    protected_question_ids = set(st.session_state.get("protected_question_ids", set()))
-    merged = merge_responses_with_repository(draft_responses, refreshed, saved, protected_question_ids)
-    draft_responses.clear()
-    draft_responses.update(merged)
-    st.session_state["responses_cache"] = dict(refreshed)
-    st.session_state["page_draft_responses"] = dict(draft_responses)
-    st.session_state["saved_responses"] = dict(saved or refreshed)
-    sync_widget_state_from_responses(merged, force=True, protected_question_ids=protected_question_ids)
-    return draft_responses
-
-
-def reload_page_responses(repo: Any, company_id: str, draft_responses: dict[str, str], session_state: dict[str, Any], *, force: bool = False) -> dict[str, str]:
-    refreshed = dict(repo.responses_for(company_id))
-    saved = dict(session_state.get("saved_responses", {}))
-    protected_question_ids = set(session_state.get("protected_question_ids", set()))
-    if force:
-        draft_responses.clear()
-        draft_responses.update(refreshed)
-        merged = dict(refreshed)
-    else:
-        merged = merge_responses_with_repository(draft_responses, refreshed, saved, protected_question_ids)
-        draft_responses.clear()
-        draft_responses.update(merged)
-    session_state["responses_cache"] = dict(refreshed)
-    session_state["page_draft_responses"] = dict(draft_responses)
-    session_state["saved_responses"] = dict(saved or refreshed)
-    sync_widget_state_from_responses(merged, force=True, protected_question_ids=protected_question_ids)
-    return draft_responses
-
-
-def reload_page_responses_for_page(
-    repo: Any,
-    company_id: str,
-    draft_responses: dict[str, str],
-    session_state: dict[str, Any],
-    questions: list[dict[str, str]],
-) -> dict[str, str]:
-    refreshed = dict(repo.responses_for(company_id))
-    saved = dict(session_state.get("saved_responses", {}))
-    protected_question_ids = set(session_state.get("protected_question_ids", set()))
-    page_question_ids = {str(question["QuestionID"]) for question in questions if question.get("QuestionID")}
-
-    for question_id, value in list(refreshed.items()):
-        if question_id not in page_question_ids:
-            continue
-        current_value = draft_responses.get(question_id, "")
-        saved_value = saved.get(question_id, "")
-        if question_id in protected_question_ids:
-            continue
-        if str(current_value).strip() and str(current_value) != str(saved_value):
-            continue
-        draft_responses[question_id] = value
-
-    session_state["responses_cache"] = dict(refreshed)
-    session_state["page_draft_responses"] = dict(draft_responses)
-    session_state["saved_responses"] = dict(saved or refreshed)
-    sync_widget_state_from_responses(draft_responses, force=True, protected_question_ids=protected_question_ids)
-    return draft_responses
-
-
-def reload_responses_for_navigation(
-    repo: Any,
-    company_id: str,
-    draft_responses: dict[str, str],
-    session_state: dict[str, Any],
-    selected_page_id: str,
-    questions: list[dict[str, str]],
-) -> dict[str, str]:
-    if selected_page_id == "review":
-        return reload_page_responses(repo, company_id, draft_responses, session_state, force=True)
-    return reload_page_responses_for_page(repo, company_id, draft_responses, session_state, questions)
-
-
-def save_page_questions(repo: Any, company_id: str, email: str, questions: list[dict[str, str]], draft_responses: dict[str, str]) -> int:
-    existing = dict(st.session_state.get("saved_responses", {}))
-    latest_repository_responses: dict[str, str] = {}
-    if hasattr(repo, "responses_for"):
-        try:
-            latest_repository_responses = dict(repo.responses_for(company_id))
-        except Exception as exc:
-            print(f"Failed to load latest repository responses before save: {exc}")
-
-    saved_count = 0
-    for question in questions:
-        question_id = question["QuestionID"]
-        key = f"answer_{question_id}"
-        widget_value = st.session_state.get(key, None)
-        if isinstance(widget_value, tuple):
-            value = widget_value[0]
-        elif widget_value is None:
-            value = draft_responses.get(question_id, "")
-        else:
-            value = widget_value
-        draft_responses[question_id] = value
-
-        baseline_value = latest_repository_responses.get(question_id, existing.get(question_id, ""))
-        if str(baseline_value) != str(value):
-            repo.save_response(company_id, question_id, value, email)
-            saved_count += 1
-    if saved_count and hasattr(repo, "refresh_question_visibility"):
-        try:
-            repo.refresh_question_visibility(company_id, draft_responses)
-        except Exception as exc:
-            print(f"Failed to refresh question visibility after save: {exc}")
-
-    st.session_state["responses_cache"] = dict(draft_responses)
-    st.session_state["page_draft_responses"] = dict(draft_responses)
-    st.session_state["saved_responses"] = dict(draft_responses)
-    protected_question_ids = st.session_state.setdefault("protected_question_ids", set())
-    for question in questions:
-        protected_question_ids.discard(question["QuestionID"])
-    return saved_count
-
-
 def render_question_page(
     page: dict[str, Any],
     design_data: dict[str, Any],
-    draft_responses: dict[str, str],
+    page_session: PageSession,
     readonly: bool,
-    repo: Any | None = None,
-    company_id: str | None = None,
 ) -> None:
     for question in page.get("Questions", []):
-        question_id = question["QuestionID"]
-        conditions = design_data["ConditionsByQuestion"].get(question_id, [])
-        if not resolve_question_visibility(repo, company_id, question, conditions, draft_responses):
+        question_id = str(question["QuestionID"])
+        if not page_session.visibility.get(question_id, True):
             continue
         options = sorted(
             design_data["OptionsByQuestion"].get(question_id, []),
             key=lambda row: int(row.get("DisplayOrder", 0) or 0),
         )
         st.divider()
-        value_input(question, options, draft_responses.get(question_id, ""), readonly, draft_responses)
+        value_input(question, options, page_session.responses.get(question_id, ""), readonly, page_session.responses)
 
 
 def main() -> None:
@@ -581,6 +511,7 @@ def main() -> None:
                         raise
                     get_repository.clear()
                     repo, demo_mode = select_repository("", st.secrets)
+                    initialize_host_visibility(repo)
                     company, user = authenticate(repo, cleaned_company_id, cleaned_email)
                 if not user:
                     st.warning("We couldn't verify your Company ID and Email Address. Please check your details and try again. If the problem persists, contact your Project Administrator.")
@@ -604,6 +535,7 @@ def main() -> None:
     except BaseException:
         get_repository.clear()
         repo, demo_mode = select_repository("", st.secrets)
+        initialize_host_visibility(repo)
         company = refresh_company_state(repo, identity["CompanyID"])
     assert company
 
@@ -617,31 +549,40 @@ def main() -> None:
     # Create main page header
     st.title("DLM Lifecycle Assessment")
     st.caption(f"{identity['CompanyName']} · Signed in as {identity['Name']} ({identity['Email']})")
-    if st.button("Reload shared survey"):
-        repo.clear_cache() # if click, cache cleared and where do we reload the repo??? !!!
-        current_page_id = st.session_state.get("active_page_id", None)
-        page_drafts = st.session_state.setdefault("page_draft_responses", {})
-        reload_page_responses(repo, identity["CompanyID"], page_drafts, st.session_state, force=True)
-        if current_page_id is not None:
-            st.session_state["active_page_id"] = current_page_id
-            st.session_state["sidebar_page_selection"] = current_page_id
-        st.rerun()
-    if readonly:
-        st.success(f"Submitted by {company['SubmittedBy']} on {company['SubmittedTime']}. This survey is read-only.")
 
     design_data = repo.design_data()
     pages = build_page_structure(design_data)
     all_questions = [question for page in pages[:-1] for question in page["Questions"]]
-    
-    # Create draft responses
-    draft_responses = st.session_state.setdefault("page_draft_responses", {})
 
-    if not draft_responses:
-        sync_draft_responses(repo, identity["CompanyID"], draft_responses)
+    # Step 4.6: one PageSession is the single source of truth for responses/
+    # visibility/dirtiness this session - replaces page_draft_responses,
+    # responses_cache, saved_responses, protected_question_ids, visible_question_ids,
+    # and previously_seen_question_ids.
+    page_session = get_page_session(st.session_state)
+    is_first_load = not page_session.loaded
+
+    if st.button("Reload shared survey"):
+        current_page_id = st.session_state.get("active_page_id", None)
+        page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=True)
+        if current_page_id is not None:
+            st.session_state["active_page_id"] = current_page_id
+            st.session_state["sidebar_page_selection"] = current_page_id
+        st.rerun()
+
+    if readonly:
+        st.success(f"Submitted by {company['SubmittedBy']} on {company['SubmittedTime']}. This survey is read-only.")
+
+    # Load-on-entry (first visit this session), otherwise just capture whatever the
+    # user's already typed into visible widgets before we recompute visibility.
+    if is_first_load:
+        page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=True)
     else:
-        sync_widget_state_from_responses(draft_responses)
+        page_session.capture_widgets(all_questions, st.session_state)
 
-    sync_question_visibility_state(pages, design_data, draft_responses, st.session_state, repo=repo, company_id=identity["CompanyID"])
+    # Preserve-on-hide: pure in-memory recompute (4.2), then drop any now-hidden
+    # widget's key so it re-seeds from `responses` if it becomes visible again.
+    page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
+    page_session.clear_hidden_widgets(all_questions, st.session_state)
 
    #--------------------------------------------------
    # Create sidebar
@@ -656,11 +597,16 @@ def main() -> None:
         previous_page_id = st.session_state["active_page_id"]
         if previous_page_id != selected_page_id:
             if previous_page_id != "review":
-                saved_count = save_page_questions(repo, identity["CompanyID"], identity["Email"], [page for page in pages if page["PageID"] == previous_page_id][0]["Questions"], draft_responses)
+                previous_page_questions = [page for page in pages if page["PageID"] == previous_page_id][0]["Questions"]
+                saved_count = page_session.save_to_repository(repo, identity["CompanyID"], identity["Email"], previous_page_questions, st.session_state)
                 if saved_count:
                     st.toast(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {page_titles[previous_page_id]}.")
-            selected_page_questions = [page for page in pages if page["PageID"] == selected_page_id][0]["Questions"]
-            reload_responses_for_navigation(repo, identity["CompanyID"], draft_responses, st.session_state, selected_page_id, selected_page_questions)
+            # Save-on-exit above; load-on-entry for the page being navigated to.
+            # The review page always force-reloads (it summarizes every page), a
+            # regular page does a merge-reload that never clobbers unsaved local edits.
+            page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=(selected_page_id == "review"))
+            page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
+            page_session.clear_hidden_widgets(all_questions, st.session_state)
         st.session_state["active_page_id"] = selected_page_id
 
         st.divider()
@@ -673,10 +619,37 @@ def main() -> None:
             "Once submitted, no further changes can be made.",
             unsafe_allow_html=True,
         )
+
         if st.button("Sign out"):
             clear_answer_widgets()
             st.session_state.identity = None
             st.rerun()
+
+        st.divider()
+        st.subheader("Admin")
+
+        # Fix 5: invalidate_static()/invalidate_session() (step 4.1) were previously
+        # never called by app.py, meaning a project administrator editing
+        # Pages/Questions/QuestionOptions/QuestionConditions or Companies/Users
+        # directly in the database would not see those changes reflected in a
+        # running session until the process itself restarted. This gives an
+        # explicit, opt-in way to pick up those changes without a restart, while
+        # leaving the page-level (Responses/QuestionVisibility) cache untouched -
+        # in-progress answers on this page are unaffected.
+        with st.expander("Reload design & users"):
+            st.caption("Use this only if the survey design (pages, questions, options) or company/user list changed after this session started.")
+            if st.button("Reload now", key="admin_reload_design_users"):
+                # Note: this button is rendered after st.radio(key="sidebar_page_selection")
+                # above has already been instantiated this run, so its session_state
+                # key cannot be reassigned here (Streamlit raises a
+                # StreamlitAPIException). That's fine - reloading design/user data
+                # doesn't change which page is selected, so session_state already
+                # holds the right value and needs no adjustment before rerunning.
+                if hasattr(repo, "invalidate_static"):
+                    repo.invalidate_static()
+                if hasattr(repo, "invalidate_session"):
+                    repo.invalidate_session()
+                st.rerun()
 
     selected_page = next(page for page in pages if page["PageID"] == selected_page_id)
 
@@ -685,12 +658,12 @@ def main() -> None:
     if selected_page_id != "review":
 
         st.subheader(selected_page["PageTitle"])
-        render_question_page(selected_page, design_data, draft_responses, readonly, repo=repo, company_id=identity["CompanyID"])
+        render_question_page(selected_page, design_data, page_session, readonly)
         if not readonly:
             st.divider()
             save_clicked = st.button("Save this page", type="primary")
             if save_clicked:
-                saved_count = save_page_questions(repo, identity["CompanyID"], identity["Email"], selected_page["Questions"], draft_responses)
+                saved_count = page_session.save_to_repository(repo, identity["CompanyID"], identity["Email"], selected_page["Questions"], st.session_state)
                 if saved_count:
                     st.success(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {selected_page['PageTitle']}.")
                 else:
@@ -704,7 +677,7 @@ def main() -> None:
         st.subheader("Review")
         st.caption("Check the readiness of your submission before sending it.")
         for page in pages[:-1]:
-            readiness = get_page_readiness(page["Questions"], design_data["ConditionsByQuestion"], draft_responses, repo=repo, company_id=identity["CompanyID"])
+            readiness = get_page_readiness(page["Questions"], page_session.visibility, page_session.responses)
             left_col, right_col = st.columns([3, 2], vertical_alignment="center")
             with left_col:
                 status_text = f"{readiness['answered']}/{readiness['total']} required visible questions answered"
@@ -726,18 +699,18 @@ def main() -> None:
                         st.progress(progress_value, "incomplete")
                 else:
                     st.progress(1.0, "completed")
-        missing = get_missing_required_questions(all_questions, design_data["ConditionsByQuestion"], draft_responses, repo=repo, company_id=identity["CompanyID"])
+        missing = get_missing_required_questions(all_questions, page_session.visibility, page_session.responses)
         if missing:
             st.warning("Missing required visible answers: " + ", ".join(missing))
         else:
             st.success("All required visible questions are answered.")
         if not readonly:
             if st.button("Submit assessment", type="primary", use_container_width=True):
-                missing = get_missing_required_questions(all_questions, design_data["ConditionsByQuestion"], draft_responses, repo=repo, company_id=identity["CompanyID"])
+                missing = get_missing_required_questions(all_questions, page_session.visibility, page_session.responses)
                 if missing:
                     st.error("Complete all required questions before submitting: " + ", ".join(missing))
                 else:
-                    save_page_questions(repo, identity["CompanyID"], identity["Email"], all_questions, draft_responses)
+                    page_session.save_to_repository(repo, identity["CompanyID"], identity["Email"], all_questions, st.session_state)
                     repo.submit(identity["CompanyID"], identity["Email"])
                     st.rerun()
         return
