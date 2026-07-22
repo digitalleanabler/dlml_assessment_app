@@ -39,7 +39,7 @@ def initialize_host_visibility(repo: Any) -> bool:
     # statements regardless of companies x questions - when the repository supports
     # it. Fall back to the old per-company loop only for repositories with no
     # network/disk round-trip cost to optimize away in the first place
-    # (InMemoryRepository, GoogleSheetsRepository).
+    # (InMemoryRepository).
     if hasattr(repo, "initialize_all_visibility"):
         try:
             repo.initialize_all_visibility()

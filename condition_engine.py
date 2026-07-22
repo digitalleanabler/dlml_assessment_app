@@ -78,8 +78,6 @@ def is_question_visible(
     question: dict[str, Any], conditions: Iterable[dict[str, Any]], responses: dict[str, Any]
 ) -> bool:
     """Return whether a question should appear for the current responses."""
-    if "Active" in question and not _as_bool(question.get("Active", True)):
-        return False
     rows = sorted(conditions, key=lambda row: int(row.get("Seq", 0) or 0))
     if not rows:
         return True
