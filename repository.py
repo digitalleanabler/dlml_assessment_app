@@ -581,6 +581,75 @@ class SQLiteRepository:
             debug(f"Question visibility refreshed successfully for company '{company_id}'.")
         self._design_cache = None
         self.clear_cache()
+        # Record which companies were seeded by this bulk operation so we
+        # don't re-seed them again per-process on first login.
+        try:
+            self._visibility_initialized_companies = {str(c.get("CompanyID", "") or "").strip() for c in companies if str(c.get("CompanyID", "") or "").strip()}
+        except Exception:
+            # Defensive: never let this bookkeeping break initialization.
+            pass
+
+    def initialize_company_visibility(self, company_id: str) -> None:
+        """Scoped, batched visibility initialization for a single company.
+        Mirrors initialize_all_visibility() but confines reads/writes to one
+        company and uses chunked batched statements to avoid N+1 round trips.
+        """
+        company_id = str(company_id or "").strip()
+        if not company_id:
+            return
+
+        questions = self.rows("Questions")
+        if not questions:
+            return
+
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        try:
+            from .condition_engine import is_question_visible
+        except ImportError:  # pragma: no cover - support running module directly
+            from condition_engine import is_question_visible
+
+        current_responses = self.responses_for(company_id)
+        visibility_rows: list[tuple] = []
+        response_seed_rows: list[tuple] = []
+
+        for question in questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+            visibility_rows.append((company_id, question_id, "TRUE" if visible else "FALSE"))
+            if question_id not in current_responses:
+                response_seed_rows.append((company_id, question_id, "", "", ""))
+
+        with self._connect() as conn:
+            for chunk in _chunked(visibility_rows):
+                _multi_row_upsert(
+                    conn, "QuestionVisibility",
+                    columns=["CompanyID", "QuestionID", "Visible"],
+                    key_columns=("CompanyID", "QuestionID"),
+                    update_columns=["Visible"],
+                    rows=chunk,
+                )
+            for chunk in _chunked(response_seed_rows):
+                _multi_row_insert_or_ignore(
+                    conn, "Responses",
+                    columns=["CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime"],
+                    key_columns=("CompanyID", "QuestionID"),
+                    rows=chunk,
+                )
+            conn.commit()
+
+        # Mark this company as seeded for this repo instance.
+        seeded = getattr(self, "_visibility_initialized_companies", None)
+        if seeded is None:
+            seeded = set()
+        seeded.add(company_id)
+        self._visibility_initialized_companies = seeded
+        # Keep design cache None so subsequent reads pick up any changes.
+        self._design_cache = None
         return current_responses
 
     def initialize_all_visibility(self) -> None:
@@ -1128,6 +1197,71 @@ class TursoRepository(SQLiteRepository):
         debug(f"Bulk-initialized visibility for {len(companies)} companies x {len(questions)} questions in {len(_chunked(visibility_rows)) + len(_chunked(response_seed_rows))} batched statement(s).")
         self._design_cache = None
         self.clear_cache()
+        # Record seeded companies for this repo instance
+        try:
+            self._visibility_initialized_companies = {str(c.get("CompanyID", "") or "").strip() for c in companies if str(c.get("CompanyID", "") or "").strip()}
+        except Exception:
+            pass
+
+    def initialize_company_visibility(self, company_id: str) -> None:
+        """Scoped, batched visibility initialization for a single company (Turso).
+        Uses the Turso connection style (non-context manager) but mirrors the
+        SQLiteRepository implementation to avoid N+1 network round trips.
+        """
+        company_id = str(company_id or "").strip()
+        if not company_id:
+            return
+
+        questions = self.rows("Questions")
+        if not questions:
+            return
+
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        try:
+            from .condition_engine import is_question_visible
+        except ImportError:
+            from condition_engine import is_question_visible
+
+        current_responses = self.responses_for(company_id)
+        visibility_rows: list[tuple] = []
+        response_seed_rows: list[tuple] = []
+
+        for question in questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+            visibility_rows.append((company_id, question_id, "TRUE" if visible else "FALSE"))
+            if question_id not in current_responses:
+                response_seed_rows.append((company_id, question_id, "", "", ""))
+
+        conn = self._connect()
+        for chunk in _chunked(visibility_rows):
+            _multi_row_upsert(
+                conn, "QuestionVisibility",
+                columns=["CompanyID", "QuestionID", "Visible"],
+                key_columns=("CompanyID", "QuestionID"),
+                update_columns=["Visible"],
+                rows=chunk,
+            )
+        for chunk in _chunked(response_seed_rows):
+            _multi_row_insert_or_ignore(
+                conn, "Responses",
+                columns=["CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime"],
+                key_columns=("CompanyID", "QuestionID"),
+                rows=chunk,
+            )
+        conn.commit()
+
+        seeded = getattr(self, "_visibility_initialized_companies", None)
+        if seeded is None:
+            seeded = set()
+        seeded.add(company_id)
+        self._visibility_initialized_companies = seeded
+        self._design_cache = None
 
     def _update_company_last_updated(self, company_id: str, stamp: str, conn: Any | None = None) -> None:
         connection = conn or self._connect()
@@ -1204,6 +1338,53 @@ class InMemoryRepository:
             existing_response = next((row for row in self.tables["Responses"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
             if existing_response is None:
                 self.tables["Responses"].append({"CompanyID": company_id, "QuestionID": question_id, "ResponseValue": "", "LastModifiedBy": "", "LastModifiedTime": ""})
+
+    def initialize_company_visibility(self, company_id: str) -> None:
+        """Scoped, batched visibility initialization for a single company (in-memory).
+        Mirrors the SQL implementations but operates on the in-memory tables.
+        """
+        company_id = str(company_id or "").strip()
+        if not company_id:
+            return
+        questions = self.rows("Questions")
+        if not questions:
+            return
+
+        try:
+            from .condition_engine import is_question_visible
+        except ImportError:
+            from condition_engine import is_question_visible
+
+        current_responses = dict(self.responses_for(company_id))
+        conditions_by_question: dict[str, list[dict[str, str]]] = {}
+        for row in self.rows("QuestionConditions"):
+            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
+
+        self.tables.setdefault("QuestionVisibility", [])
+        self.tables.setdefault("Responses", [])
+
+        for question in questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
+            visible_value = "TRUE" if visible else "FALSE"
+            existing = next((row for row in self.tables["QuestionVisibility"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
+            if existing is None:
+                self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": visible_value})
+            else:
+                existing["Visible"] = visible_value
+
+            existing_response = next((row for row in self.tables["Responses"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
+            if existing_response is None:
+                self.tables["Responses"].append({"CompanyID": company_id, "QuestionID": question_id, "ResponseValue": "", "LastModifiedBy": "", "LastModifiedTime": ""})
+
+        seeded = getattr(self, "_visibility_initialized_companies", None)
+        if seeded is None:
+            seeded = set()
+        seeded.add(company_id)
+        self._visibility_initialized_companies = seeded
+        self._design_cache = None
 
     def rows(self, worksheet: str) -> list[dict[str, str]]:
         if worksheet in STATIC_TABLES:

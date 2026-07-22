@@ -369,6 +369,23 @@ def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, An
         if hasattr(repo, "load_login_data"):
             repo.load_login_data(force=True)
         company = repo.company(company_id) if hasattr(repo, "company") else None
+
+        # One-time, per-process company-scoped visibility initialization.
+        if company and hasattr(repo, "initialize_company_visibility"):
+            seeded = getattr(repo, "_visibility_initialized_companies", None)
+            if seeded is None:
+                seeded = set()
+                setattr(repo, "_visibility_initialized_companies", seeded)
+            cid = str(company.get("CompanyID", "") or "").strip()
+            if cid and cid not in seeded:
+                try:
+                    repo.initialize_company_visibility(cid)
+                except Exception as exc:
+                    # Log but don't fail authentication for a visibility seed error.
+                    print(f"initialize_company_visibility failed for '{cid}': {exc}")
+                else:
+                    seeded.add(cid)
+
         user = repo.user(email, company["CompanyID"]) if company else None
         return company, user
     except Exception as exc:
