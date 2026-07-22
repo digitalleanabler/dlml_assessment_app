@@ -1,5 +1,3 @@
-# Author: Tanakorn Tantanawat
-
 """Repository implementations for local SQLite, Turso, and in-memory use."""
 
 from __future__ import annotations
@@ -13,8 +11,6 @@ import inspect
 import streamlit as st
 import sys
 from datetime import datetime
-
-
 try:
     import libsql
 except Exception as exc:  # pragma: no cover - optional dependency for cloud mode
@@ -22,17 +18,6 @@ except Exception as exc:  # pragma: no cover - optional dependency for cloud mod
     LIBSQL_IMPORT_ERROR = exc
 else:
     LIBSQL_IMPORT_ERROR = None
-
-
-def debug(msg):
-    frame = inspect.currentframe().f_back
-    filename = Path(frame.f_code.co_filename).name
-    print(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]}: {filename}: {frame.f_lineno}: {frame.f_code.co_name}: {msg}")
-    sys.stdout.flush()
-
-
-def libsql_available() -> bool:
-    return libsql is not None
 
 
 SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "QuestionVisibility", "Responses", "ResponseHistory")
@@ -52,6 +37,56 @@ SHEET_HEADERS = {
     "Responses": ["CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime"],
     "ResponseHistory": ["CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime"],
 }
+SEED: dict[str, list[dict[str, str]]] = {
+    "Companies": [
+        {"CompanyID": "C001", "CompanyName": "SWAT in Dream", "Status": "Draft", "LastUpdated": "",  "SubmittedBy": "", "SubmittedTime": ""},
+        {"CompanyID": "C002", "CompanyName": "LAFD in Dream", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
+    ],
+    "Users": [
+        {"Email": "tonytanakorn@gmail.com", "Name": "Tony", "CompanyID": "C001"},
+        {"Email": "digitalleanabler@gmail.com", "Name": "Leanabler", "CompanyID": "C001"},
+        {"Email": "hondo@gmail.com", "Name": "Hondo", "CompanyID": "C001"},
+        {"Email": "deac@gmail.com", "Name": "Deacon", "CompanyID": "C001"},
+        {"Email": "tanakorn.tan@nectec.or.th", "Name": "Tanakorn", "CompanyID": "C002"},
+        {"Email": "toneiam@gmail.com", "Name": "Eiam", "CompanyID": "C002"},
+        {"Email": "bobby@gmail.com", "Name": "Bobby", "CompanyID": "C002"},
+        {"Email": "buck@gmail.com", "Name": "Buck", "CompanyID": "C002"},
+    ],
+    "Pages": [
+        {"PageID": "P001", "PageTitle": "???"},
+        {"PageID": "P002", "PageTitle": "???"},
+        {"PageID": "P003", "PageTitle": "???"},
+    ],
+    "Questions": [
+        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "???", "AnswerType": "Text", "Required": "TRUE"},
+        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "???", "AnswerType": "Choice", "Required": "TRUE"},
+        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "???", "AnswerType": "Choice", "Required": "TRUE"},
+    ],
+    "QuestionOptions": [
+        {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "None"},
+        {"OptionID": "O002B", "QuestionID": "Q002", "DisplayOrder": "2", "OptionValue": "SOME", "DisplayText": "Some"},
+        {"OptionID": "O002C", "QuestionID": "Q002", "DisplayOrder": "3", "OptionValue": "ALL", "DisplayText": "All"},
+        {"OptionID": "O003A", "QuestionID": "Q003", "DisplayOrder": "1", "OptionValue": "NO", "DisplayText": "No"},
+        {"OptionID": "O003B", "QuestionID": "Q003", "DisplayOrder": "2", "OptionValue": "YES", "DisplayText": "Yes"},
+    ],
+    "QuestionConditions": [
+        {"LogicID": "L001", "QuestionID": "Q003", "Seq": "1", "LeftParen": "", "DependsOnQuestion": "Q002", "Operator": "=", "ExpectedValue": "ALL", "RightParen": "", "LogicalWithNext": "END"},
+    ],
+    "QuestionVisibility": [],
+    "Responses": [],
+    "ResponseHistory": [],
+}
+
+
+def debug(msg):
+    frame = inspect.currentframe().f_back
+    filename = Path(frame.f_code.co_filename).name
+    print(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]}: {filename}: {frame.f_lineno}: {frame.f_code.co_name}: {msg}")
+    sys.stdout.flush()
+
+
+def libsql_available() -> bool:
+    return libsql is not None
 
 
 def default_database_path() -> Path:
@@ -131,51 +166,8 @@ def _multi_row_insert_or_ignore(
 # chunks of this size - still a small constant number of round trips, just not
 # literally one, for very large datasets.
 _BULK_CHUNK_SIZE = 500
-
-
 def _chunked(rows: list[tuple], size: int = _BULK_CHUNK_SIZE) -> list[list[tuple]]:
     return [rows[i : i + size] for i in range(0, len(rows), size)]
-
-
-SEED: dict[str, list[dict[str, str]]] = {
-    "Companies": [
-        {"CompanyID": "C001", "CompanyName": "SWAT in Dream", "Status": "Draft", "LastUpdated": "",  "SubmittedBy": "", "SubmittedTime": ""},
-        {"CompanyID": "C002", "CompanyName": "LAFD in Dream", "Status": "Draft", "LastUpdated": "", "SubmittedBy": "", "SubmittedTime": ""},
-    ],
-    "Users": [
-        {"Email": "tonytanakorn@gmail.com", "Name": "Tony", "CompanyID": "C001"},
-        {"Email": "digitalleanabler@gmail.com", "Name": "Leanabler", "CompanyID": "C001"},
-        {"Email": "hondo@gmail.com", "Name": "Hondo", "CompanyID": "C001"},
-        {"Email": "deac@gmail.com", "Name": "Deacon", "CompanyID": "C001"},
-        {"Email": "tanakorn.tan@nectec.or.th", "Name": "Tanakorn", "CompanyID": "C002"},
-        {"Email": "toneiam@gmail.com", "Name": "Eiam", "CompanyID": "C002"},
-        {"Email": "bobby@gmail.com", "Name": "Bobby", "CompanyID": "C002"},
-        {"Email": "buck@gmail.com", "Name": "Buck", "CompanyID": "C002"},
-    ],
-    "Pages": [
-        {"PageID": "P001", "PageTitle": "???"},
-        {"PageID": "P002", "PageTitle": "???"},
-        {"PageID": "P003", "PageTitle": "???"},
-    ],
-    "Questions": [
-        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "???", "AnswerType": "Text", "Required": "TRUE"},
-        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "???", "AnswerType": "Choice", "Required": "TRUE"},
-        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "???", "AnswerType": "Choice", "Required": "TRUE"},
-    ],
-    "QuestionOptions": [
-        {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "None"},
-        {"OptionID": "O002B", "QuestionID": "Q002", "DisplayOrder": "2", "OptionValue": "SOME", "DisplayText": "Some"},
-        {"OptionID": "O002C", "QuestionID": "Q002", "DisplayOrder": "3", "OptionValue": "ALL", "DisplayText": "All"},
-        {"OptionID": "O003A", "QuestionID": "Q003", "DisplayOrder": "1", "OptionValue": "NO", "DisplayText": "No"},
-        {"OptionID": "O003B", "QuestionID": "Q003", "DisplayOrder": "2", "OptionValue": "YES", "DisplayText": "Yes"},
-    ],
-    "QuestionConditions": [
-        {"LogicID": "L001", "QuestionID": "Q003", "Seq": "1", "LeftParen": "", "DependsOnQuestion": "Q002", "Operator": "=", "ExpectedValue": "ALL", "RightParen": "", "LogicalWithNext": "END"},
-    ],
-    "QuestionVisibility": [],
-    "Responses": [],
-    "ResponseHistory": [],
-}
 
 
 class SQLiteRepository:

@@ -1,12 +1,12 @@
 from __future__ import annotations
-
 import os
+import sys
+import inspect
+from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
-
 import streamlit as st
-
 try:
     from .condition_engine import is_question_visible
     from .repository import InMemoryRepository, SQLiteRepository, TursoRepository, LIBSQL_IMPORT_ERROR
@@ -17,6 +17,13 @@ except ImportError:  # pragma: no cover - support running app.py directly
 
 st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layout="centered")
 
+
+def debug(msg):
+    frame = inspect.currentframe().f_back
+    filename = Path(frame.f_code.co_filename).name
+    print(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]}: {filename}: {frame.f_lineno}: {frame.f_code.co_name}: {msg}")
+    sys.stdout.flush()
+    
 
 # Function to initialize host-level visibility for all companies
 def initialize_host_visibility(repo: Any) -> bool:
@@ -65,6 +72,7 @@ def initialize_host_visibility(repo: Any) -> bool:
 def select_repository(app_env: str | None = None, secrets: Any | None = None) -> tuple[Any, bool]:
     general_section = secrets.get("general", {}) if secrets is not None else {}
     resolved_env = (app_env or os.getenv("app_env") or str(general_section.get("app_env", "")) or "").strip().lower()
+    debug(f"resolved_env={resolved_env}")
 
     if resolved_env == "local":
         try:
