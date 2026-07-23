@@ -344,12 +344,22 @@ class PageSession:
                 session_state.pop(f"answer_{question_id}", None)
 
     def save_to_repository(self, repo: Any, company_id: str, email: str, questions: list[dict[str, str]], session_state: dict[str, Any]) -> int:
-        """Save-on-exit: capture the latest widget edits, diff against the last known
-        persisted snapshot restricted to this set of questions, and write the whole
-        batch in one call (4.3/4.4)."""
+        """Save-on-exit (ADR-007, "Save-what-you-see"): capture the latest widget
+        edits, then send *every* question on this page - visible or currently
+        hidden-but-preserved - to the repository, not just the ones that differ from
+        `saved_snapshot`. A user tracks what's on screen, not their click history;
+        gating a save on dirtiness let a save silently omit a visible, non-blank
+        answer with no indication to the user (see ADR-007's trace in
+        07-decisions.md). `saved_snapshot`/`dirty_ids()` are unaffected by this and
+        remain in use for merge-reload staleness protection on *other* pages - this
+        only changes what counts as "part of this save." The repository's own
+        diff-against-current-database step (`save_responses()`) still limits what
+        actually gets written/logged - it's a write-avoidance optimization, not an
+        intent filter - so this does not change database write volume for a save
+        where most fields are already correct in the database."""
         self.capture_widgets(questions, session_state)
         page_question_ids = {str(question["QuestionID"]) for question in questions if question.get("QuestionID")}
-        changes = {question_id: self.responses[question_id] for question_id in self.dirty_ids() & page_question_ids}
+        changes = {question_id: self.responses[question_id] for question_id in page_question_ids if question_id in self.responses}
         if not changes:
             return 0
         saved_count = repo.save_responses(company_id, changes, email)

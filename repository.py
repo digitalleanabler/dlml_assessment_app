@@ -442,7 +442,18 @@ class SQLiteRepository:
         diff it against what's stored, and write only what actually changed - one
         batched statement per table, regardless of how many answers changed or how
         many questions the company has. Returns the count of responses whose value
-        actually changed."""
+        actually changed.
+
+        ADR-007 note: `changes` may now (as of app.py's PageSession.save_to_repository)
+        contain every question on the page being saved, not only ones the caller
+        edited - "Save-what-you-see." The `actual_changes` diff below is kept exactly
+        as-is on purpose: it is a write-avoidance optimization (skip a no-op UPDATE /
+        ResponseHistory row when the incoming value already matches the database),
+        not a filter on caller intent. Do not repurpose it back into an intent filter
+        (e.g. by having the caller only send fields it deems "changed") - that's the
+        behavior ADR-007 replaced. Do not remove it either - that would make every
+        save write every field on the page unconditionally, scaling DB writes with
+        page size instead of with actual changes."""
         company_id = str(company_id or "").strip()
         if not company_id or not changes:
             return 0
