@@ -10,9 +10,11 @@ import streamlit as st
 try:
     from .condition_engine import is_question_visible
     from .repository import InMemoryRepository, SQLiteRepository, TursoRepository, LIBSQL_IMPORT_ERROR
+    from .config import RESOURCE_URL
 except ImportError:  # pragma: no cover - support running app.py directly
     from condition_engine import is_question_visible
     from repository import InMemoryRepository, SQLiteRepository, TursoRepository, LIBSQL_IMPORT_ERROR
+    from config import RESOURCE_URL
 
 
 st.set_page_config(page_title="DLM Lifecycle Assessment", page_icon="📝", layout="centered")
@@ -648,12 +650,16 @@ def main() -> None:
         st.subheader("Collaboration")
         st.write("All authorised users in this company edit the same response set.")
         st.caption(
-            "Save your progress at any time.<br>"
-            "Responses can be edited until submission.<br>"
-            "If multiple users edit the same response, the latest saved change will be kept.<br>"
-            "Once submitted, no further changes can be made.",
+            f"Save your progress at any time.<br>"
+            f"Responses can be edited until submission.<br>"
+            f"If multiple users edit the same response, the latest saved change will be kept.<br>"
+            f"Once submitted, no further changes can be made.<br>",
+            #f"📁 [Supporting documents]({RESOURCE_URL})",
             unsafe_allow_html=True,
         )
+        
+        if RESOURCE_URL:
+            st.markdown(f"📁 [Supporting documents]({RESOURCE_URL})")
 
         if st.button("Sign out"):
             clear_answer_widgets()
