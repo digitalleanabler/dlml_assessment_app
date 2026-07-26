@@ -329,6 +329,15 @@ class PageSession:
     saved_snapshot: dict[str, str] = field(default_factory=dict)
     visibility: dict[str, bool] = field(default_factory=dict)
     loaded: bool = False
+    # ADR-011: page-scoped, visit-local baseline used only to decide whether
+    # leaving the currently open page should show the unsaved-changes warning.
+    # Distinct from `saved_snapshot`/`dirty_ids()` above, which compare against
+    # the database globally and exist only to protect an in-progress edit on a
+    # *different* page from a merge-reload triggered elsewhere (ADR-001). See
+    # 05-glossary.md, "Entry snapshot" vs "Dirty" vs "Page-dirty".
+    entry_responses: dict[str, str] = field(default_factory=dict)
+    entry_visibility: dict[str, bool] = field(default_factory=dict)
+    entry_page_id: str | None = None
 
     def dirty_ids(self) -> set[str]:
         """Questions whose in-memory value differs from the last known persisted
@@ -397,6 +406,58 @@ class PageSession:
             question_id = str(question.get("QuestionID", "") or "").strip()
             if question_id and not self.visibility.get(question_id, True):
                 session_state.pop(f"answer_{question_id}", None)
+
+    def capture_entry_snapshot(self, page_id: str, page_questions: list[dict[str, str]]) -> None:
+        """ADR-011: record this one page's responses/visibility at the moment it
+        was loaded - first load, an ordinary merge-reload arrival, a force-reload
+        (Review, "Reload shared survey") - and again immediately after a
+        successful "Save this page"/"Submit assessment". This is the baseline
+        `is_page_dirty()` compares against. Deliberately *not* captured when the
+        user chooses "Return to the current page" from the unsaved-changes
+        warning - that path is a cancelled navigation, not a reload (see
+        03-business-rules.md)."""
+        page_question_ids = {str(question["QuestionID"]) for question in page_questions if question.get("QuestionID")}
+        self.entry_page_id = page_id
+        self.entry_responses = {question_id: str(self.responses.get(question_id, "")) for question_id in page_question_ids}
+        self.entry_visibility = {question_id: bool(self.visibility.get(question_id, True)) for question_id in page_question_ids}
+
+    def is_page_dirty(self, page_questions: list[dict[str, str]]) -> bool:
+        """ADR-011, "Page-dirty": True if any question on this page currently
+        differs - in value **or** in visibility - from this page's own entry
+        snapshot. A visibility flip counts on its own, even if the underlying
+        stored value hasn't changed (e.g. a controlling question elsewhere on the
+        same page toggled a dependent question's visibility). A question that
+        stayed hidden for the whole visit can't make the page dirty by itself,
+        since neither its value nor its visibility will have moved from what the
+        entry snapshot recorded."""
+        for question in page_questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            if str(self.responses.get(question_id, "")) != self.entry_responses.get(question_id, ""):
+                return True
+            if bool(self.visibility.get(question_id, True)) != self.entry_visibility.get(question_id, True):
+                return True
+        return False
+
+    def discard_page_changes(self, page_questions: list[dict[str, str]], session_state: dict[str, Any]) -> None:
+        """ADR-011, "Leave without saving": reset this page's responses/visibility
+        back to its own entry snapshot, in memory, immediately - not deferred
+        until the page happens to be revisited - and drop the affected widget
+        keys so a later visit re-seeds from the restored value instead of a stale
+        widget-held one. Writes nothing to the database: the entry snapshot is
+        already known-good, previously loaded data, so resetting to it is a pure
+        in-memory operation (see 03-business-rules.md, "Leaving without
+        saving")."""
+        for question in page_questions:
+            question_id = str(question.get("QuestionID", "") or "").strip()
+            if not question_id:
+                continue
+            if question_id in self.entry_responses:
+                self.responses[question_id] = self.entry_responses[question_id]
+            if question_id in self.entry_visibility:
+                self.visibility[question_id] = self.entry_visibility[question_id]
+            session_state.pop(f"answer_{question_id}", None)
 
     def save_to_repository(self, repo: Any, company_id: str, email: str, questions: list[dict[str, str]], session_state: dict[str, Any]) -> int:
         """Save-on-exit (ADR-007, "Save-what-you-see"): capture the latest widget
@@ -861,6 +922,7 @@ def main() -> None:
     design_data = repo.design_data()
     pages = build_page_structure(design_data)
     all_questions = [question for page in pages[:-1] for question in page["Questions"]]
+    page_by_id = {page["PageID"]: page for page in pages}
 
     # Step 4.6: one PageSession is the single source of truth for responses/
     # visibility/dirtiness this session - replaces page_draft_responses,
@@ -870,11 +932,21 @@ def main() -> None:
     is_first_load = not page_session.loaded
 
     if st.button("Reload shared survey"):
-        current_page_id = st.session_state.get("active_page_id", None)
+        current_page_id = st.session_state.get("active_page_id", pages[0]["PageID"])
         page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=True)
-        if current_page_id is not None:
-            st.session_state["active_page_id"] = current_page_id
-            st.session_state["sidebar_page_selection"] = current_page_id
+        page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
+        page_session.clear_hidden_widgets(all_questions, st.session_state)
+        reload_target = page_by_id.get(current_page_id, pages[0])
+        # ADR-011: force-reload establishes a fresh entry snapshot for the page
+        # being viewed, same as any other full reload.
+        page_session.capture_entry_snapshot(reload_target["PageID"], reload_target["Questions"])
+        st.session_state["active_page_id"] = current_page_id
+        st.session_state["sidebar_page_selection"] = current_page_id
+        # "Reload shared survey" is an explicit discard/refresh action (ADR-011,
+        # 03-business-rules.md) - exempt from the unsaved-changes warning, and it
+        # supersedes any warning that might already be pending.
+        st.session_state.pop("pending_nav_target", None)
+        st.session_state.pop("pending_signout", None)
         st.rerun()
 
     if readonly:
@@ -892,6 +964,14 @@ def main() -> None:
     page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
     page_session.clear_hidden_widgets(all_questions, st.session_state)
 
+    if is_first_load:
+        # ADR-011: the very first page shown this session also needs an entry
+        # snapshot, so an edit made before ever navigating still triggers the
+        # unsaved-changes warning on the first navigation attempt.
+        initial_page_id = st.session_state.get("active_page_id", pages[0]["PageID"])
+        initial_page = page_by_id.get(initial_page_id, pages[0])
+        page_session.capture_entry_snapshot(initial_page["PageID"], initial_page["Questions"])
+
    #--------------------------------------------------
    # Create sidebar
     with st.sidebar:
@@ -899,23 +979,39 @@ def main() -> None:
         page_options = [page["PageID"] for page in pages]
         page_titles = {page["PageID"]: page["PageTitle"] for page in pages}
         st.session_state.setdefault("sidebar_page_selection", page_options[0])
+        st.session_state.setdefault("active_page_id", st.session_state["sidebar_page_selection"])
+
+        # ADR-011: while an unsaved-changes warning is pending resolution, keep
+        # the radio showing the page actually being left, not the attempted
+        # target - the target hasn't been navigated to yet, and "Return to the
+        # current page" must render as if the attempt never happened.
+        if st.session_state.get("pending_nav_target") is not None or st.session_state.get("pending_signout"):
+            st.session_state["sidebar_page_selection"] = st.session_state["active_page_id"]
+
         selected_page_id = st.radio("Navigate", page_options, format_func=lambda page_id: page_titles[page_id], key="sidebar_page_selection")
-        if "active_page_id" not in st.session_state:
-            st.session_state["active_page_id"] = selected_page_id
         previous_page_id = st.session_state["active_page_id"]
-        if previous_page_id != selected_page_id:
-            if previous_page_id != "review":
-                previous_page_questions = [page for page in pages if page["PageID"] == previous_page_id][0]["Questions"]
-                saved_count = page_session.save_to_repository(repo, identity["CompanyID"], identity["Email"], previous_page_questions, st.session_state)
-                if saved_count:
-                    st.toast(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {page_titles[previous_page_id]}.")
-            # Save-on-exit above; load-on-entry for the page being navigated to.
-            # The review page always force-reloads (it summarizes every page), a
-            # regular page does a merge-reload that never clobbers unsaved local edits.
-            page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=(selected_page_id == "review"))
-            page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
-            page_session.clear_hidden_widgets(all_questions, st.session_state)
-        st.session_state["active_page_id"] = selected_page_id
+
+        if (
+            previous_page_id != selected_page_id
+            and st.session_state.get("pending_nav_target") is None
+            and not st.session_state.get("pending_signout")
+        ):
+            previous_page = page_by_id[previous_page_id]
+            # ADR-011: navigation itself never saves. A page-dirty previous page
+            # (a value or visibility change since its own entry snapshot) blocks
+            # the navigation behind an unsaved-changes warning instead of saving.
+            if previous_page_id != "review" and page_session.is_page_dirty(previous_page["Questions"]):
+                st.session_state["pending_nav_target"] = selected_page_id
+            else:
+                # Load-on-entry for the page being navigated to. The review page
+                # always force-reloads (it summarizes every page), a regular page
+                # does a merge-reload that never clobbers unsaved local edits.
+                page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=(selected_page_id == "review"))
+                page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
+                page_session.clear_hidden_widgets(all_questions, st.session_state)
+                target_page = page_by_id[selected_page_id]
+                page_session.capture_entry_snapshot(target_page["PageID"], target_page["Questions"])
+                st.session_state["active_page_id"] = selected_page_id
 
         st.divider()
         st.subheader("Collaboration")
@@ -933,9 +1029,17 @@ def main() -> None:
             st.markdown(f"📁 [Supporting documents]({RESOURCE_URL})")
 
         if st.button("Sign out"):
-            clear_answer_widgets()
-            st.session_state.identity = None
-            st.rerun()
+            current_page = page_by_id.get(st.session_state.get("active_page_id", pages[0]["PageID"]), pages[0])
+            # ADR-011: sign-out is governed by the same page-dirty gate as
+            # navigation. It never writes responses either way - before or after
+            # this check - it only ever decides whether to warn first.
+            if current_page["PageID"] != "review" and page_session.is_page_dirty(current_page["Questions"]):
+                st.session_state["pending_signout"] = True
+                st.rerun()
+            else:
+                clear_answer_widgets()
+                st.session_state.identity = None
+                st.rerun()
 
         st.divider()
         st.subheader("Admin")
@@ -963,11 +1067,69 @@ def main() -> None:
                     repo.invalidate_session()
                 st.rerun()
 
-    selected_page = next(page for page in pages if page["PageID"] == selected_page_id)
+    # ADR-011: exactly two outcomes when a page-dirty navigation/sign-out was
+    # attempted - "Leave without saving" (discard this page's local changes,
+    # then carry out the pending navigation/sign-out) or "Return to the current
+    # page" (a cancelled navigation - no reload of any kind, state untouched).
+    def _leave_without_saving(current_page: dict[str, Any]) -> None:
+        page_session.discard_page_changes(current_page["Questions"], st.session_state)
+        page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
+        page_session.clear_hidden_widgets(all_questions, st.session_state)
+
+        nav_target = st.session_state.pop("pending_nav_target", None)
+        sign_out_pending = st.session_state.pop("pending_signout", False)
+
+        if nav_target is not None:
+            target_page = page_by_id[nav_target]
+            page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=(nav_target == "review"))
+            page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
+            page_session.clear_hidden_widgets(all_questions, st.session_state)
+            page_session.capture_entry_snapshot(target_page["PageID"], target_page["Questions"])
+            st.session_state["active_page_id"] = nav_target
+            st.session_state["sidebar_page_selection"] = nav_target
+        elif sign_out_pending:
+            clear_answer_widgets()
+            st.session_state.identity = None
+
+        st.rerun()
+
+    def _return_to_current_page(current_page_id: str) -> None:
+        st.session_state.pop("pending_nav_target", None)
+        st.session_state.pop("pending_signout", None)
+        st.session_state["sidebar_page_selection"] = current_page_id
+        st.rerun()
+
+    pending_nav_target = st.session_state.get("pending_nav_target")
+    pending_signout = st.session_state.get("pending_signout", False)
+    active_page_id_now = st.session_state.get("active_page_id", pages[0]["PageID"])
+    warning_page = page_by_id.get(active_page_id_now, pages[0])
+
+    if pending_nav_target is not None or pending_signout:
+        @st.dialog("Unsaved changes")
+        def _unsaved_changes_dialog() -> None:
+            st.write(
+                f"You have unsaved changes on **{warning_page['PageTitle']}**. "
+                "If you leave now, they will be discarded."
+            )
+            return_col, leave_col = st.columns(2)
+            with return_col:
+                if st.button("Return to the current page", type="primary", use_container_width=True):
+                    _return_to_current_page(warning_page["PageID"])
+            with leave_col:
+                if st.button("Leave without saving", use_container_width=True):
+                    _leave_without_saving(warning_page)
+
+        _unsaved_changes_dialog()
+
+    # While the warning above is unresolved, the page actually rendered is the
+    # one being left (`warning_page`) - the attempted target was never navigated
+    # to (see "Returning to the current page," 03-business-rules.md).
+    display_page_id = warning_page["PageID"] if (pending_nav_target is not None or pending_signout) else selected_page_id
+    selected_page = page_by_id[display_page_id]
 
     #--------------------------------------------------
     # Create main page content
-    if selected_page_id != "review":
+    if display_page_id != "review":
 
         st.subheader(selected_page["PageTitle"])
         render_question_page(selected_page, design_data, page_session, readonly)
@@ -976,6 +1138,11 @@ def main() -> None:
             save_clicked = st.button("Save this page", type="primary")
             if save_clicked:
                 saved_count = page_session.save_to_repository(repo, identity["CompanyID"], identity["Email"], selected_page["Questions"], st.session_state)
+                # ADR-011: a successful "Save this page" resets this page's entry
+                # snapshot, so an immediate subsequent navigation shows no
+                # unsaved-changes warning.
+                page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
+                page_session.capture_entry_snapshot(selected_page["PageID"], selected_page["Questions"])
                 if saved_count:
                     st.success(f"Saved {saved_count} response{'s' if saved_count != 1 else ''} on {selected_page['PageTitle']}.")
                 else:
@@ -984,7 +1151,7 @@ def main() -> None:
 
     #--------------------------------------------------
     # Create review page
-    if selected_page_id == "review":
+    if display_page_id == "review":
 
         st.subheader("Review")
         st.caption("Check the readiness of your submission before sending it.")
