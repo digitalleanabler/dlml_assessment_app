@@ -3,11 +3,18 @@ import os
 import re
 import sys
 import inspect
+import base64
+import io
 from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape
 import streamlit as st
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph
 try:
     from .condition_engine import is_question_visible
     from .repository import InMemoryRepository, SQLiteRepository, TursoRepository, LIBSQL_IMPORT_ERROR
@@ -602,6 +609,140 @@ def get_page_readiness(
     return {"answered": answered, "total": total, "completed": answered == total, "missing": missing}
 
 
+def _sanitize_filename_component(text: str) -> str:
+    """06-conventions.md, "PDF export filename": every character that is not a
+    letter, digit, or underscore becomes '_', leading/trailing '_' stripped. Used
+    only for the PDF's internal title metadata - per ADR-009 the export anchor has
+    no `download` attribute, so this is never actually offered to the browser's
+    save dialog as a suggested filename; it is a best-effort naming intent only."""
+    cleaned = re.sub(r"[^A-Za-z0-9_]", "_", text or "")
+    return cleaned.strip("_")
+
+
+def _export_pdf_title(company_name: str, generated_at: datetime) -> str:
+    stamp = generated_at.strftime("%Y%m%d_%H%M%S")
+    sanitized = _sanitize_filename_component(company_name) or "Company"
+    return f"{sanitized}_{stamp}"
+
+
+def build_export_pdf_bytes(
+    company: dict[str, Any],
+    pages: list[dict[str, Any]],
+    design_data: dict[str, Any],
+    page_session: "PageSession",
+) -> bytes:
+    """PDF export (04-requirements.md §10; 03-business-rules.md, "PDF export of
+    assessment responses"). Reads only already-loaded `page_session.responses` /
+    `page_session.visibility` - no DB read of its own, no rerun (ADR-009). Only
+    questions currently visible (per the same in-memory, pure computation described
+    in ADR-001) are included; a hidden question is omitted entirely, not shown
+    blank."""
+    styles = getSampleStyleSheet()
+    header_style = ParagraphStyle("ExportHeader", parent=styles["Heading1"], spaceAfter=4)
+    meta_style = ParagraphStyle("ExportMeta", parent=styles["Normal"], textColor=colors.HexColor("#444444"), spaceAfter=10)
+    page_title_style = ParagraphStyle("ExportPageTitle", parent=styles["Heading2"], spaceBefore=16, spaceAfter=6)
+    question_style = ParagraphStyle("ExportQuestion", parent=styles["Normal"], fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=3)
+    selected_style = ParagraphStyle("ExportAnswerSelected", parent=styles["Normal"], textColor=colors.black, leftIndent=14, spaceAfter=1)
+    unselected_style = ParagraphStyle("ExportAnswerUnselected", parent=styles["Normal"], textColor=colors.HexColor("#999999"), leftIndent=14, spaceAfter=1)
+    freeform_style = ParagraphStyle("ExportFreeform", parent=styles["Normal"], textColor=colors.black, leftIndent=14, spaceAfter=1)
+
+    generated_at = datetime.now()
+    company_name = str(company.get("CompanyName", "") or "")
+    status_text = "Submitted" if str(company.get("Status", "")).strip().upper() == "SUBMITTED" else "Draft"
+    options_by_question = design_data.get("OptionsByQuestion", {})
+
+    story: list[Any] = [
+        Paragraph("DLM Lifecycle Assessment - Export", header_style),
+        Paragraph(f"Company: {xml_escape(company_name)}", meta_style),
+        Paragraph(f"Status: {status_text}", meta_style),
+        Paragraph(f"Generated: {generated_at.strftime('%Y-%m-%d %H:%M:%S')}", meta_style),
+    ]
+
+    for page in pages:
+        if page["PageID"] == "review":
+            continue
+        visible_questions = [
+            question for question in page.get("Questions", [])
+            if page_session.visibility.get(str(question.get("QuestionID", "")), True)
+        ]
+        if not visible_questions:
+            continue
+        story.append(Paragraph(xml_escape(page["PageTitle"]), page_title_style))
+        for question in visible_questions:
+            question_id = str(question["QuestionID"])
+            kind = str(question.get("AnswerType", "")).upper()
+            value = str(page_session.responses.get(question_id, "") or "")
+            story.append(Paragraph(xml_escape(question["QuestionText"]), question_style))
+
+            if kind in {"TEXT", "NUMBER", "DATE"}:
+                display_value = xml_escape(value) if value.strip() else "&nbsp;"
+                story.append(Paragraph(display_value, freeform_style))
+            else:
+                if kind == "YESNO":
+                    options = [{"OptionValue": "YES", "DisplayText": "Yes"}, {"OptionValue": "NO", "DisplayText": "No"}]
+                else:
+                    options = sorted(
+                        options_by_question.get(question_id, []),
+                        key=lambda row: int(row.get("DisplayOrder", 0) or 0),
+                    )
+                for option in options:
+                    is_selected = bool(value.strip()) and str(option.get("OptionValue", "")) == value
+                    glyph = "[x]" if is_selected else "[ ]"
+                    text = f"{glyph} {xml_escape(str(option.get('DisplayText', '')))}"
+                    story.append(Paragraph(text, selected_style if is_selected else unselected_style))
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=LETTER, title=_export_pdf_title(company_name, generated_at))
+    doc.build(story)
+    return buffer.getvalue()
+
+
+def render_export_pdf_link(pdf_bytes: bytes) -> None:
+    """ADR-009 (see amendments in `07-decisions.md`): a single control that opens
+    the PDF in a new tab - not `st.download_button`. Rendered via
+    `st.html(..., unsafe_allow_javascript=True)`. Deliberately does NOT use an
+    `onclick="..."` attribute on the button: Streamlit's HTML sanitizer strips
+    inline event-handler attributes outright, as a blanket XSS precaution
+    independent of whatever `unsafe_allow_javascript` permits - so a button with
+    `onclick=...` renders but silently never fires, on `st.markdown` *and* on
+    `st.html`. Instead, a real `<script>` tag (the thing `unsafe_allow_javascript`
+    is specifically documented to let execute) attaches the click listener
+    programmatically via `document.currentScript.previousElementSibling`, which
+    needs no `id`/`getElementById` and works whether or not Streamlit wraps this
+    content in a shadow root. Clicking it is still a pure client-side action with
+    no Streamlit callback, so it cannot trigger a rerun or mutate
+    `st.session_state`."""
+    encoded = base64.b64encode(pdf_bytes).decode("ascii")
+    st.html(
+        f"""
+        <button style="
+            display:block; width:100%; box-sizing:border-box;
+            text-align:center; padding:0.5rem 1rem; margin-bottom:0.75rem;
+            border-radius:0.5rem; border:1px solid rgba(49,51,63,0.2);
+            background-color:#f0f2f6; color:#31333F; cursor:pointer;
+            font-family:'Source Sans Pro', sans-serif; font-size:1rem;
+            font-weight:600;">
+            📄 Export assessment
+        </button>
+        <script>
+        (function() {{
+            const btn = document.currentScript.previousElementSibling;
+            btn.addEventListener("click", function() {{
+                const byteChars = atob("{encoded}");
+                const byteNumbers = new Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) {{
+                    byteNumbers[i] = byteChars.charCodeAt(i);
+                }}
+                const blob = new Blob([new Uint8Array(byteNumbers)], {{ type: "application/pdf" }});
+                window.open(URL.createObjectURL(blob), "_blank");
+            }});
+        }})();
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
+
+
 def render_question_page(
     page: dict[str, Any],
     design_data: dict[str, Any],
@@ -853,6 +994,14 @@ def main() -> None:
             st.warning("Missing required visible answers: " + ", ".join(missing))
         else:
             st.success("All required visible questions are answered.")
+
+        # PDF export (04-requirements.md §10, ADR-009): always available regardless
+        # of readiness or readonly status; reads only the already-loaded
+        # page_session state, so it needs no extra DB round trip and causes no
+        # rerun of its own. Positioned directly above "Submit assessment".
+        pdf_bytes = build_export_pdf_bytes(company, pages, design_data, page_session)
+        render_export_pdf_link(pdf_bytes)
+
         if not readonly:
             if st.button("Submit assessment", type="primary", use_container_width=True):
                 missing = get_missing_required_questions(all_questions, page_session.visibility, page_session.responses)
