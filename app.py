@@ -687,7 +687,7 @@ def build_export_pdf_bytes(
             question_id = str(question["QuestionID"])
             kind = str(question.get("AnswerType", "")).upper()
             value = str(page_session.responses.get(question_id, "") or "")
-            story.append(Paragraph(xml_escape(question["QuestionText"]), question_style))
+            story.append(Paragraph(f"[{xml_escape(question_id)}] {xml_escape(question['QuestionText'])}", question_style))
 
             if kind in {"TEXT", "NUMBER", "DATE"}:
                 display_value = xml_escape(value) if value.strip() else "&nbsp;"
