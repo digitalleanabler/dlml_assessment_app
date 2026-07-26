@@ -999,7 +999,16 @@ def main() -> None:
         # of readiness or readonly status; reads only the already-loaded
         # page_session state, so it needs no extra DB round trip and causes no
         # rerun of its own. Positioned directly above "Submit assessment".
-        pdf_bytes = build_export_pdf_bytes(company, pages, design_data, page_session)
+        #
+        # `company` here comes from refresh_company_state() -> company_status(),
+        # which (ADR-002) is a deliberately narrow, WHERE-scoped read of just
+        # Status/LastUpdated/SubmittedBy/SubmittedTime - it never selects
+        # CompanyName, so company.get("CompanyName", "") is always blank. The
+        # company name is static reference data that was already read correctly
+        # at login (authenticate() -> repo.company()) and cached on `identity`;
+        # reuse that instead of widening the narrow per-rerun status query.
+        export_company = {**company, "CompanyName": identity.get("CompanyName", "")}
+        pdf_bytes = build_export_pdf_bytes(export_company, pages, design_data, page_session)
         render_export_pdf_link(pdf_bytes)
 
         if not readonly:
