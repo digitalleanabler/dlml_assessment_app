@@ -20,12 +20,15 @@ else:
     LIBSQL_IMPORT_ERROR = None
 
 
-SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "QuestionVisibility", "Responses", "ResponseHistory")
+SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "QuestionVisibility", "Responses", "ResponseHistory", "UserConsents")
 STATIC_TABLES = {"Pages", "Questions", "QuestionOptions", "QuestionConditions"}
 # Step 4.4: tables keyed by (CompanyID, QuestionID) get a real UNIQUE index so a single
 # INSERT ... ON CONFLICT (...) DO UPDATE can replace the old "SELECT to check existence,
 # then branch to INSERT or UPDATE" pattern used throughout this module.
 UPSERT_KEY_TABLES = ("Responses", "QuestionVisibility")
+# UserConsents is deliberately NOT in UPSERT_KEY_TABLES / SEED-skipped-only-if-empty
+# logic the way Responses/ResponseHistory are - see 02-data-model.md: it has no
+# unique key and is append-only by design (ADR-008), so it's always insert-only.
 SHEET_HEADERS = {
     "Companies": ["CompanyID", "CompanyName", "Status", "LastUpdated", "SubmittedBy", "SubmittedTime"],
     "Users": ["Email", "Name", "CompanyID"],
@@ -36,6 +39,7 @@ SHEET_HEADERS = {
     "QuestionVisibility": ["CompanyID", "QuestionID", "Visible"],
     "Responses": ["CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime"],
     "ResponseHistory": ["CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime"],
+    "UserConsents": ["Email", "NoticeVersion", "TimeAccepted"],
 }
 SEED: dict[str, list[dict[str, str]]] = {
     "Companies": [
@@ -75,6 +79,7 @@ SEED: dict[str, list[dict[str, str]]] = {
     "QuestionVisibility": [],
     "Responses": [],
     "ResponseHistory": [],
+    "UserConsents": [],
 }
 
 
@@ -235,7 +240,7 @@ class SQLiteRepository:
 
                 if existing:
                     continue
-                if sheet_name in {"Responses", "ResponseHistory"}:
+                if sheet_name in {"Responses", "ResponseHistory", "UserConsents"}:
                     continue
                 headers = SHEET_HEADERS.get(sheet_name, [])
                 if not headers:
@@ -432,6 +437,42 @@ class SQLiteRepository:
         with self._connect() as conn:
             cursor = conn.execute('SELECT "QuestionID", "Visible" FROM "QuestionVisibility" WHERE "CompanyID" = ?', (company_id,))
             return {row["QuestionID"]: ("" if row["Visible"] is None else str(row["Visible"])) for row in cursor.fetchall()}
+
+    def consents_for(self, email: str) -> list[dict[str, str]]:
+        """Scoped, case-insensitive read of this email's UserConsents rows (mirrors
+        the case-insensitive Email match used in user()). Used by the consent gate
+        (03-business-rules.md, 'Privacy notice consent') to decide whether the
+        signed-in user has already accepted the current major notice version."""
+        target = str(email or "").strip().lower()
+        if not target:
+            return []
+        with self._connect() as conn:
+            cursor = conn.execute(
+                'SELECT "Email", "NoticeVersion", "TimeAccepted" FROM "UserConsents" WHERE LOWER("Email") = ?',
+                (target,),
+            )
+            return [
+                {key: "" if value is None else str(value) for key, value in dict(row).items()}
+                for row in cursor.fetchall()
+            ]
+
+    def record_consent(self, email: str, notice_version: str) -> None:
+        """Append-only insert of one UserConsents row (ADR-008) - never an upsert,
+        never keyed as (Email)-unique. An earlier row for an older major version is
+        left in place as a historical record; see 02-data-model.md."""
+        cleaned_email = str(email or "").strip()
+        cleaned_version = str(notice_version or "").strip()
+        if not cleaned_email or not cleaned_version:
+            return
+        stamp = now()
+        with self._connect() as conn:
+            _multi_row_insert(
+                conn, "UserConsents",
+                columns=["Email", "NoticeVersion", "TimeAccepted"],
+                rows=[(cleaned_email, cleaned_version, stamp)],
+            )
+            conn.commit()
+            debug(f"Recorded privacy-notice consent for '{cleaned_email}' at version '{cleaned_version}'.")
 
     def save_responses(self, company_id: str, changes: dict[str, str], email: str) -> int:
         """Step 4.3: batched replacement for calling save_response() once per changed
@@ -845,7 +886,7 @@ class TursoRepository(SQLiteRepository):
             debug(f"Found {existing} existing rows in '{sheet_name}'.")
             if existing:
                 continue
-            if sheet_name in {"Responses", "ResponseHistory"}:
+            if sheet_name in {"Responses", "ResponseHistory", "UserConsents"}:
                 continue
             headers = SHEET_HEADERS.get(sheet_name, [])
             if not headers:
@@ -991,6 +1032,42 @@ class TursoRepository(SQLiteRepository):
             payload = dict(zip(columns, row))
             result[payload["QuestionID"]] = "" if payload["Visible"] is None else str(payload["Visible"])
         return result
+
+    def consents_for(self, email: str) -> list[dict[str, str]]:
+        """Scoped, case-insensitive read of this email's UserConsents rows - see
+        SQLiteRepository.consents_for. Overridden only because Turso connections
+        aren't used via a `with` block elsewhere in this class."""
+        target = str(email or "").strip().lower()
+        if not target:
+            return []
+        conn = self._connect()
+        cursor = conn.execute(
+            'SELECT "Email", "NoticeVersion", "TimeAccepted" FROM "UserConsents" WHERE LOWER("Email") = ?',
+            (target,),
+        )
+        columns = [column[0] for column in cursor.description or []]
+        return [
+            {key: "" if value is None else str(value) for key, value in zip(columns, row)}
+            for row in cursor.fetchall()
+        ]
+
+    def record_consent(self, email: str, notice_version: str) -> None:
+        """Append-only insert of one UserConsents row - see
+        SQLiteRepository.record_consent. Overridden only for Turso's connection
+        style (no context manager, explicit commit())."""
+        cleaned_email = str(email or "").strip()
+        cleaned_version = str(notice_version or "").strip()
+        if not cleaned_email or not cleaned_version:
+            return
+        stamp = now()
+        conn = self._connect()
+        _multi_row_insert(
+            conn, "UserConsents",
+            columns=["Email", "NoticeVersion", "TimeAccepted"],
+            rows=[(cleaned_email, cleaned_version, stamp)],
+        )
+        conn.commit()
+        debug(f"Recorded privacy-notice consent for '{cleaned_email}' at version '{cleaned_version}'.")
 
     def save_responses(self, company_id: str, changes: dict[str, str], email: str) -> int:
         """Step 4.3: see SQLiteRepository.save_responses for the full rationale. On
@@ -1472,6 +1549,25 @@ class InMemoryRepository:
 
     def visibility_for(self, company_id: str) -> dict[str, str]:
         return {row["QuestionID"]: row["Visible"] for row in self.tables.get("QuestionVisibility", []) if row["CompanyID"] == company_id}
+
+    def consents_for(self, email: str) -> list[dict[str, str]]:
+        """In-memory equivalent of the scoped, case-insensitive UserConsents read -
+        see SQLiteRepository.consents_for."""
+        target = str(email or "").strip().lower()
+        if not target:
+            return []
+        self.tables.setdefault("UserConsents", [])
+        return [row for row in self.tables["UserConsents"] if str(row.get("Email", "")).strip().lower() == target]
+
+    def record_consent(self, email: str, notice_version: str) -> None:
+        """Append-only insert of one UserConsents row - see
+        SQLiteRepository.record_consent."""
+        cleaned_email = str(email or "").strip()
+        cleaned_version = str(notice_version or "").strip()
+        if not cleaned_email or not cleaned_version:
+            return
+        self.tables.setdefault("UserConsents", [])
+        self.tables["UserConsents"].append({"Email": cleaned_email, "NoticeVersion": cleaned_version, "TimeAccepted": now()})
 
     def save_responses(self, company_id: str, changes: dict[str, str], email: str) -> int:
         """Step 4.3, in-memory version: same collapse of "one refresh per changed

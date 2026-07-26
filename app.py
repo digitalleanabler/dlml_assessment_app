@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import re
 import sys
 import inspect
 from pathlib import Path
@@ -25,6 +26,45 @@ def debug(msg):
     filename = Path(frame.f_code.co_filename).name
     print(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]}: {filename}: {frame.f_lineno}: {frame.f_code.co_name}: {msg}")
     sys.stdout.flush()
+
+
+def default_privacy_notice_path() -> Path:
+    return Path(__file__).resolve().parent / "privacy_notice.md"
+
+
+def load_privacy_notice() -> tuple[str, str]:
+    """Reads privacy_notice.md (sibling of app.py) and parses its
+    '**Notice Version:** vX.Y' metadata line - the sole source of truth for the
+    notice text and its version (03-business-rules.md, "Privacy notice consent";
+    06-conventions.md, "Privacy notice version"). Read fresh every call rather than
+    cached, so a version bump on disk is always picked up the next time the gate
+    runs (i.e. on the next login - see "Not re-checked mid-session" below).
+    Returns (version_string, full_notice_text); version_string is "" if the
+    metadata line isn't found or the file is missing."""
+    path = default_privacy_notice_path()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"Unable to read privacy notice at {path}: {exc}")
+        return "", ""
+    match = re.search(r"\*\*Notice Version:\*\*\s*(\S+)", text)
+    version = match.group(1).strip() if match else ""
+    return version, text
+
+
+def notice_major_version(version: str) -> int | None:
+    """Parse the integer major component before the first '.' in a vMAJOR.MINOR
+    privacy-notice version string, e.g. 'v1.2' -> 1 (05-glossary.md, 'Major version
+    (notice)'). Only this component is ever compared when deciding whether a user
+    must re-accept. Returns None if the string doesn't parse."""
+    cleaned = str(version or "").strip()
+    if cleaned[:1].lower() == "v":
+        cleaned = cleaned[1:]
+    major_part = cleaned.split(".", 1)[0]
+    try:
+        return int(major_part)
+    except ValueError:
+        return None
     
 
 # Function to initialize host-level visibility for all companies
@@ -248,6 +288,11 @@ def clear_answer_widgets() -> None:
     st.session_state.pop("page_session", None)
     st.session_state.pop("active_page_id", None)
     st.session_state.pop("sidebar_page_selection", None)
+    # Consent gate (ADR-008): "Not re-checked mid-session" means once-per-login, not
+    # once-per-process - so it must be cleared on every identity change (a fresh
+    # sign-in or a sign-out/decline), the same lifecycle as the rest of this
+    # session's page-level state.
+    st.session_state.pop("consent_confirmed", None)
 
 
 @dataclass
@@ -403,6 +448,63 @@ def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, An
     except Exception as exc:
         print(f"Repository authentication failed: {exc}")
         raise
+
+
+def render_privacy_consent_gate(repo: Any, identity: dict[str, Any]) -> bool:
+    """Consent gate (04-requirements.md §9, 03-business-rules.md 'Privacy notice
+    consent', ADR-008). Depends only on the signed-in user's email - no dependency
+    on `company` or survey design data. Returns True once the user has consented
+    (just now, or in an earlier login already recorded in UserConsents); False
+    while the dialog is still pending a response, in which case the caller must
+    render nothing else this rerun.
+
+    Runs at most once per login: `consent_confirmed` is set the first time this
+    returns True and is only cleared by clear_answer_widgets() on the next
+    sign-in/sign-out, per "Not re-checked mid-session" below."""
+    if st.session_state.get("consent_confirmed"):
+        return True
+
+    version, notice_text = load_privacy_notice()
+    email = str(identity.get("Email", "") or "")
+
+    if version and hasattr(repo, "consents_for"):
+        current_major = notice_major_version(version)
+        existing = repo.consents_for(email)
+        already_consented = any(
+            notice_major_version(row.get("NoticeVersion", "")) == current_major
+            for row in existing
+        )
+        if already_consented:
+            st.session_state["consent_confirmed"] = True
+            return True
+
+    st.title("Privacy Notice")
+    if notice_text:
+        st.markdown(notice_text)
+    else:
+        st.error("The privacy notice could not be loaded. Please contact your Project Administrator.")
+
+    accept_col, decline_col = st.columns(2)
+    with accept_col:
+        accept_clicked = st.button("Accept and Continue", type="primary", use_container_width=True, disabled=not notice_text)
+    with decline_col:
+        decline_clicked = st.button("Decline", use_container_width=True)
+
+    if accept_clicked:
+        if hasattr(repo, "record_consent"):
+            repo.record_consent(email, version)
+        st.session_state["consent_confirmed"] = True
+        st.rerun()
+    elif decline_clicked:
+        # Decline (03-business-rules.md): log out immediately, no session retained,
+        # no UserConsents row written. Does not block a future login attempt - the
+        # same user signing in again will see the same dialog, since nothing was
+        # recorded.
+        clear_answer_widgets()
+        st.session_state.identity = None
+        st.rerun()
+
+    return False
 
 
 def refresh_company_state(repo: Any, company_id: str) -> Any | None:
@@ -575,6 +677,12 @@ def main() -> None:
         initialize_host_visibility(repo)
         company = refresh_company_state(repo, identity["CompanyID"])
     assert company
+
+    # Consent gate (04-requirements.md §9, ADR-008): must run before any survey
+    # content is rendered, and depends only on identity["Email"] - not on `company`
+    # or design data, which is why it's placed here rather than further down.
+    if not render_privacy_consent_gate(repo, identity):
+        return
 
     if identity.get("CompanyStatus") != company.get("Status"):
         identity["CompanyStatus"] = company.get("Status")
