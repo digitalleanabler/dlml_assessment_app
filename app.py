@@ -13,6 +13,7 @@ from xml.sax.saxutils import escape as xml_escape
 import streamlit as st
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib import colors
+from reportlab.lib.units import inch
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph
 try:
@@ -625,6 +626,20 @@ def _export_pdf_title(company_name: str, generated_at: datetime) -> str:
     return f"{sanitized}_{stamp}"
 
 
+def _draw_export_page_number(canvas_obj: Any, doc: SimpleDocTemplate) -> None:
+    """Bottom-right 'Page N' footer, drawn once per page via SimpleDocTemplate's
+    onFirstPage/onLaterPages hooks. No total-page-count is shown (e.g. no
+    'Page N of M') - see 08-status-and-open-questions.md for why: the total is
+    only knowable after the whole story has finished flowing, which would
+    require a two-pass numbered-canvas approach; this only needs the current
+    page, which canvas.getPageNumber() already provides mid-flow."""
+    canvas_obj.saveState()
+    canvas_obj.setFont("Helvetica", 9)
+    canvas_obj.setFillColor(colors.HexColor("#444444"))
+    canvas_obj.drawRightString(LETTER[0] - 0.75 * inch, 0.5 * inch, f"Page {canvas_obj.getPageNumber()}")
+    canvas_obj.restoreState()
+
+
 def build_export_pdf_bytes(
     company: dict[str, Any],
     pages: list[dict[str, Any]],
@@ -688,12 +703,19 @@ def build_export_pdf_bytes(
                 for option in options:
                     is_selected = bool(value.strip()) and str(option.get("OptionValue", "")) == value
                     glyph = "[x]" if is_selected else "[ ]"
-                    text = f"{glyph} {xml_escape(str(option.get('DisplayText', '')))}"
+                    # Helvetica is proportional, so "[x]" and "[ ]" occupy different
+                    # widths (an "x" is wider than a space) even though both strings
+                    # are 3 characters - this shifted the answer text's starting
+                    # x-position depending on checked state. Forcing just the glyph
+                    # into Courier (monospaced, one of the 14 standard PDF fonts, no
+                    # embedding needed) makes "[x]" and "[ ]" render at identical
+                    # width, so the answer text always starts at the same position.
+                    text = f'<font face="Courier">{glyph}</font> {xml_escape(str(option.get("DisplayText", "")))}'
                     story.append(Paragraph(text, selected_style if is_selected else unselected_style))
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=LETTER, title=_export_pdf_title(company_name, generated_at))
-    doc.build(story)
+    doc.build(story, onFirstPage=_draw_export_page_number, onLaterPages=_draw_export_page_number)
     return buffer.getvalue()
 
 
