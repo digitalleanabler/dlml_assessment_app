@@ -363,22 +363,36 @@ class PageSession:
                     value = value[0]
                 self.responses[question_id] = value
 
-    def refresh_from_repository(self, repo: Any, company_id: str, session_state: dict[str, Any], *, force: bool = False) -> dict[str, str]:
+    def refresh_from_repository(self, repo: Any, company_id: str, session_state: dict[str, Any], *, force: bool = False, page_questions: list[dict[str, str]] | None = None) -> dict[str, str]:
         """Load-on-entry (Requirement 3/4): one scoped read (4.5) of this company's
         responses. A question that's currently dirty (unsaved local edit) keeps its
         local value unless `force` is set (initial load / explicit reload button); a
         concurrent edit from another user is still picked up into `saved_snapshot` so
-        dirtiness stays correct against the newest baseline either way. Any value that
-        *is* refreshed here is written straight into the widget's session_state key
-        too - a lingering widget key from a previous visit to this page would
-        otherwise shadow it, since Streamlit only seeds a widget's default when its
-        key is absent."""
+        dirtiness stays correct against the newest baseline either way.
+
+        `self.responses` (the authoritative, whole-survey dict driving
+        `recompute_visibility()`) is always refreshed company-wide, regardless of
+        `page_questions`. Only the *widget* session_state key - `answer_{id}` - is
+        additionally pre-seeded, and only for `page_questions` (the page about to be
+        rendered this same rerun, if any): a lingering widget key from a previous
+        visit to *that* page would otherwise shadow the refreshed value, since
+        Streamlit only seeds a widget's default when its key is absent. Writing that
+        key for a question on some *other* page is not just unnecessary - Streamlit
+        drops a widget's session_state key once that widget goes a rerun without
+        being instantiated, and a bare-string value written here for a Choice/YesNo
+        question does not survive being carried across that drop the way a real
+        widget interaction does. A subsequent `capture_widgets()` call can then read
+        back a corrupted/blank value for a question that was never actually
+        touched - see 08-status-and-open-questions.md, [g13] - so this must stay
+        scoped to the page actually being (re)rendered, never `all_questions`."""
         refreshed = dict(repo.responses_for(company_id))
         dirty = set() if force else self.dirty_ids()
+        scoped_ids = {str(question["QuestionID"]) for question in (page_questions or []) if question.get("QuestionID")}
         for question_id, value in refreshed.items():
             if force or question_id not in dirty:
                 self.responses[question_id] = value
-                session_state[f"answer_{question_id}"] = value
+                if question_id in scoped_ids:
+                    session_state[f"answer_{question_id}"] = value
         self.saved_snapshot = refreshed
         self.loaded = True
         return refreshed
@@ -933,10 +947,10 @@ def main() -> None:
 
     if st.button("Reload shared survey"):
         current_page_id = st.session_state.get("active_page_id", pages[0]["PageID"])
-        page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=True)
+        reload_target = page_by_id.get(current_page_id, pages[0])
+        page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=True, page_questions=reload_target["Questions"])
         page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
         page_session.clear_hidden_widgets(all_questions, st.session_state)
-        reload_target = page_by_id.get(current_page_id, pages[0])
         # ADR-011: force-reload establishes a fresh entry snapshot for the page
         # being viewed, same as any other full reload.
         page_session.capture_entry_snapshot(reload_target["PageID"], reload_target["Questions"])
@@ -955,7 +969,9 @@ def main() -> None:
     # Load-on-entry (first visit this session), otherwise just capture whatever the
     # user's already typed into visible widgets before we recompute visibility.
     if is_first_load:
-        page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=True)
+        initial_page_id = st.session_state.get("active_page_id", pages[0]["PageID"])
+        initial_page = page_by_id.get(initial_page_id, pages[0])
+        page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=True, page_questions=initial_page["Questions"])
     else:
         page_session.capture_widgets(all_questions, st.session_state)
 
@@ -968,8 +984,6 @@ def main() -> None:
         # ADR-011: the very first page shown this session also needs an entry
         # snapshot, so an edit made before ever navigating still triggers the
         # unsaved-changes warning on the first navigation attempt.
-        initial_page_id = st.session_state.get("active_page_id", pages[0]["PageID"])
-        initial_page = page_by_id.get(initial_page_id, pages[0])
         page_session.capture_entry_snapshot(initial_page["PageID"], initial_page["Questions"])
 
    #--------------------------------------------------
@@ -1006,10 +1020,10 @@ def main() -> None:
                 # Load-on-entry for the page being navigated to. The review page
                 # always force-reloads (it summarizes every page), a regular page
                 # does a merge-reload that never clobbers unsaved local edits.
-                page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=(selected_page_id == "review"))
+                target_page = page_by_id[selected_page_id]
+                page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=(selected_page_id == "review"), page_questions=target_page["Questions"])
                 page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
                 page_session.clear_hidden_widgets(all_questions, st.session_state)
-                target_page = page_by_id[selected_page_id]
                 page_session.capture_entry_snapshot(target_page["PageID"], target_page["Questions"])
                 st.session_state["active_page_id"] = selected_page_id
 
@@ -1081,7 +1095,7 @@ def main() -> None:
 
         if nav_target is not None:
             target_page = page_by_id[nav_target]
-            page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=(nav_target == "review"))
+            page_session.refresh_from_repository(repo, identity["CompanyID"], st.session_state, force=(nav_target == "review"), page_questions=target_page["Questions"])
             page_session.recompute_visibility(all_questions, design_data["ConditionsByQuestion"])
             page_session.clear_hidden_widgets(all_questions, st.session_state)
             page_session.capture_entry_snapshot(target_page["PageID"], target_page["Questions"])
