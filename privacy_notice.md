@@ -1,5 +1,3 @@
-# Privacy Notice
-
 ## Digital Lean Manufacturing Lifecycle Assessment (Beta)
 
 **Notice Version:** v1.0  
