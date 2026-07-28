@@ -545,16 +545,19 @@ class SQLiteRepository:
             )
             debug(f"Batched upsert of {len(response_rows)} response(s) for company '{company_id}'.")
 
-            if visibility_diff:
-                visibility_rows = [(company_id, question_id, value) for question_id, value in visibility_diff.items()]
-                _multi_row_upsert(
-                    conn, "QuestionVisibility",
-                    columns=["CompanyID", "QuestionID", "Visible"],
-                    key_columns=("CompanyID", "QuestionID"),
-                    update_columns=["Visible"],
-                    rows=visibility_rows,
-                )
-                debug(f"Batched upsert of {len(visibility_rows)} visibility row(s) for company '{company_id}'.")
+            # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
+            # write turned off for observation - see doc/08-status-and-open-questions.md
+            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # if visibility_diff:
+            #     visibility_rows = [(company_id, question_id, value) for question_id, value in visibility_diff.items()]
+            #     _multi_row_upsert(
+            #         conn, "QuestionVisibility",
+            #         columns=["CompanyID", "QuestionID", "Visible"],
+            #         key_columns=("CompanyID", "QuestionID"),
+            #         update_columns=["Visible"],
+            #         rows=visibility_rows,
+            #     )
+            #     debug(f"Batched upsert of {len(visibility_rows)} visibility row(s) for company '{company_id}'.")
 
             history_rows = [
                 (company_id, question_id, current_responses.get(question_id, ""), value, email, stamp)
@@ -678,14 +681,17 @@ class SQLiteRepository:
                 response_seed_rows.append((company_id, question_id, "", "", ""))
 
         with self._connect() as conn:
-            for chunk in _chunked(visibility_rows):
-                _multi_row_upsert(
-                    conn, "QuestionVisibility",
-                    columns=["CompanyID", "QuestionID", "Visible"],
-                    key_columns=("CompanyID", "QuestionID"),
-                    update_columns=["Visible"],
-                    rows=chunk,
-                )
+            # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
+            # write turned off for observation - see doc/08-status-and-open-questions.md
+            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # for chunk in _chunked(visibility_rows):
+            #     _multi_row_upsert(
+            #         conn, "QuestionVisibility",
+            #         columns=["CompanyID", "QuestionID", "Visible"],
+            #         key_columns=("CompanyID", "QuestionID"),
+            #         update_columns=["Visible"],
+            #         rows=chunk,
+            #     )
             for chunk in _chunked(response_seed_rows):
                 _multi_row_insert_or_ignore(
                     conn, "Responses",
@@ -757,14 +763,17 @@ class SQLiteRepository:
                     response_seed_rows.append((company_id, question_id, "", "", ""))
 
         with self._connect() as conn:
-            for chunk in _chunked(visibility_rows):
-                _multi_row_upsert(
-                    conn, "QuestionVisibility",
-                    columns=["CompanyID", "QuestionID", "Visible"],
-                    key_columns=("CompanyID", "QuestionID"),
-                    update_columns=["Visible"],
-                    rows=chunk,
-                )
+            # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
+            # write turned off for observation - see doc/08-status-and-open-questions.md
+            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # for chunk in _chunked(visibility_rows):
+            #     _multi_row_upsert(
+            #         conn, "QuestionVisibility",
+            #         columns=["CompanyID", "QuestionID", "Visible"],
+            #         key_columns=("CompanyID", "QuestionID"),
+            #         update_columns=["Visible"],
+            #         rows=chunk,
+            #     )
             for chunk in _chunked(response_seed_rows):
                 _multi_row_insert_or_ignore(
                     conn, "Responses",
@@ -1125,16 +1134,19 @@ class TursoRepository(SQLiteRepository):
         )
         debug(f"Batched upsert of {len(response_rows)} response(s) for company '{company_id}'.")
 
-        if visibility_diff:
-            visibility_rows = [(company_id, question_id, value) for question_id, value in visibility_diff.items()]
-            _multi_row_upsert(
-                conn, "QuestionVisibility",
-                columns=["CompanyID", "QuestionID", "Visible"],
-                key_columns=("CompanyID", "QuestionID"),
-                update_columns=["Visible"],
-                rows=visibility_rows,
-            )
-            debug(f"Batched upsert of {len(visibility_rows)} visibility row(s) for company '{company_id}'.")
+        # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
+        # write turned off for observation - see doc/08-status-and-open-questions.md
+        # [g04]. Not a final decision; uncomment this block to restore the write.
+        # if visibility_diff:
+        #     visibility_rows = [(company_id, question_id, value) for question_id, value in visibility_diff.items()]
+        #     _multi_row_upsert(
+        #         conn, "QuestionVisibility",
+        #         columns=["CompanyID", "QuestionID", "Visible"],
+        #         key_columns=("CompanyID", "QuestionID"),
+        #         update_columns=["Visible"],
+        #         rows=visibility_rows,
+        #     )
+        #     debug(f"Batched upsert of {len(visibility_rows)} visibility row(s) for company '{company_id}'.")
 
         history_rows = [
             (company_id, question_id, current_responses.get(question_id, ""), value, email, stamp)
@@ -1267,14 +1279,17 @@ class TursoRepository(SQLiteRepository):
                 if question_id not in current_responses:
                     response_seed_rows.append((company_id, question_id, "", "", ""))
 
-        for chunk in _chunked(visibility_rows):
-            _multi_row_upsert(
-                conn, "QuestionVisibility",
-                columns=["CompanyID", "QuestionID", "Visible"],
-                key_columns=("CompanyID", "QuestionID"),
-                update_columns=["Visible"],
-                rows=chunk,
-            )
+        # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
+        # write turned off for observation - see doc/08-status-and-open-questions.md
+        # [g04]. Not a final decision; uncomment this block to restore the write.
+        # for chunk in _chunked(visibility_rows):
+        #     _multi_row_upsert(
+        #         conn, "QuestionVisibility",
+        #         columns=["CompanyID", "QuestionID", "Visible"],
+        #         key_columns=("CompanyID", "QuestionID"),
+        #         update_columns=["Visible"],
+        #         rows=chunk,
+        #     )
         for chunk in _chunked(response_seed_rows):
             _multi_row_insert_or_ignore(
                 conn, "Responses",
@@ -1328,14 +1343,17 @@ class TursoRepository(SQLiteRepository):
                 response_seed_rows.append((company_id, question_id, "", "", ""))
 
         conn = self._connect()
-        for chunk in _chunked(visibility_rows):
-            _multi_row_upsert(
-                conn, "QuestionVisibility",
-                columns=["CompanyID", "QuestionID", "Visible"],
-                key_columns=("CompanyID", "QuestionID"),
-                update_columns=["Visible"],
-                rows=chunk,
-            )
+        # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
+        # write turned off for observation - see doc/08-status-and-open-questions.md
+        # [g04]. Not a final decision; uncomment this block to restore the write.
+        # for chunk in _chunked(visibility_rows):
+        #     _multi_row_upsert(
+        #         conn, "QuestionVisibility",
+        #         columns=["CompanyID", "QuestionID", "Visible"],
+        #         key_columns=("CompanyID", "QuestionID"),
+        #         update_columns=["Visible"],
+        #         rows=chunk,
+        #     )
         for chunk in _chunked(response_seed_rows):
             _multi_row_insert_or_ignore(
                 conn, "Responses",
@@ -1418,11 +1436,14 @@ class InMemoryRepository:
                 from condition_engine import is_question_visible
             visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
             visible_value = "TRUE" if visible else "FALSE"
-            existing = next((row for row in self.tables["QuestionVisibility"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
-            if existing is None:
-                self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": visible_value})
-            else:
-                existing["Visible"] = visible_value
+            # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
+            # write turned off for observation - see doc/08-status-and-open-questions.md
+            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # existing = next((row for row in self.tables["QuestionVisibility"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
+            # if existing is None:
+            #     self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": visible_value})
+            # else:
+            #     existing["Visible"] = visible_value
 
             existing_response = next((row for row in self.tables["Responses"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
             if existing_response is None:
@@ -1458,11 +1479,14 @@ class InMemoryRepository:
                 continue
             visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
             visible_value = "TRUE" if visible else "FALSE"
-            existing = next((row for row in self.tables["QuestionVisibility"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
-            if existing is None:
-                self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": visible_value})
-            else:
-                existing["Visible"] = visible_value
+            # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
+            # write turned off for observation - see doc/08-status-and-open-questions.md
+            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # existing = next((row for row in self.tables["QuestionVisibility"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
+            # if existing is None:
+            #     self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": visible_value})
+            # else:
+            #     existing["Visible"] = visible_value
 
             existing_response = next((row for row in self.tables["Responses"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
             if existing_response is None:
@@ -1622,8 +1646,11 @@ class InMemoryRepository:
                 continue
             visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
             self._ensure_company_runtime_rows(company_id, questions=[question], responses=current_responses)
-            self.tables["QuestionVisibility"] = [row for row in self.tables["QuestionVisibility"] if not (row.get("CompanyID") == company_id and row.get("QuestionID") == question_id)]
-            self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": "TRUE" if visible else "FALSE"})
+            # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
+            # write turned off for observation - see doc/08-status-and-open-questions.md
+            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # self.tables["QuestionVisibility"] = [row for row in self.tables["QuestionVisibility"] if not (row.get("CompanyID") == company_id and row.get("QuestionID") == question_id)]
+            # self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": "TRUE" if visible else "FALSE"})
 
         self._design_cache = None
         self._static_cache.clear()
