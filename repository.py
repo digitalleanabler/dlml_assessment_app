@@ -84,10 +84,11 @@ SEED: dict[str, list[dict[str, str]]] = {
 
 
 def debug(msg):
-    frame = inspect.currentframe().f_back
-    filename = Path(frame.f_code.co_filename).name
-    print(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]}: {filename}: {frame.f_lineno}: {frame.f_code.co_name}: {msg}")
-    sys.stdout.flush()
+    # frame = inspect.currentframe().f_back
+    # filename = Path(frame.f_code.co_filename).name
+    # print(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]}: {filename}: {frame.f_lineno}: {frame.f_code.co_name}: {msg}")
+    # sys.stdout.flush()
+    pass
 
 
 def libsql_available() -> bool:
