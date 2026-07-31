@@ -20,8 +20,8 @@ else:
     LIBSQL_IMPORT_ERROR = None
 
 
-SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "QuestionVisibility", "Responses", "ResponseHistory", "UserConsents")
-STATIC_TABLES = {"Pages", "Questions", "QuestionOptions", "QuestionConditions"}
+SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "QuestionVisibility", "Responses", "ResponseHistory", "UserConsents", "Stages", "Dimensions", "Entities", "ScoringItems", "Scores")
+STATIC_TABLES = {"Pages", "Questions", "QuestionOptions", "QuestionConditions", "Stages", "Dimensions", "Entities", "ScoringItems"}
 # Step 4.4: tables keyed by (CompanyID, QuestionID) get a real UNIQUE index so a single
 # INSERT ... ON CONFLICT (...) DO UPDATE can replace the old "SELECT to check existence,
 # then branch to INSERT or UPDATE" pattern used throughout this module.
@@ -40,6 +40,14 @@ SHEET_HEADERS = {
     "Responses": ["CompanyID", "QuestionID", "ResponseValue", "LastModifiedBy", "LastModifiedTime"],
     "ResponseHistory": ["CompanyID", "QuestionID", "OldValue", "NewValue", "ModifiedBy", "ModifiedTime"],
     "UserConsents": ["Email", "NoticeVersion", "TimeAccepted"],
+    "Stages": ["StageID", "StageName"],
+    "Dimensions": ["DimensionID", "DimensionName"],
+    # "EntitiyID" (not "EntityID") is not a typo introduced here - it's the actual
+    # column name in the live database. ScoringItems below references the same
+    # entity by "EntityID" (spelled correctly) instead - see 02-data-model.md.
+    "Entities": ["EntitiyID", "EntityName", "StageID"],
+    "ScoringItems": ["EntityID", "DimensionID"],
+    "Scores": ["CompanyID", "EntityID", "DimensionID", "TotalScore", "ReceivedScore"],
 }
 SEED: dict[str, list[dict[str, str]]] = {
     "Companies": [
@@ -80,6 +88,75 @@ SEED: dict[str, list[dict[str, str]]] = {
     "Responses": [],
     "ResponseHistory": [],
     "UserConsents": [],
+    "Stages": [
+        {"StageID": "ST", "StageName": "Strategic Definition"},
+        {"StageID": "TC", "StageName": "Tactical Planning"},
+        {"StageID": "SD", "StageName": "Solution Design"},
+        {"StageID": "IP", "StageName": "Implementation"},
+        {"StageID": "SE", "StageName": "Solution Evaluation"},
+    ],
+    "Dimensions": [
+        {"DimensionID": "EX", "DimensionName": "Existence"},
+        {"DimensionID": "QL", "DimensionName": "Quality"},
+        {"DimensionID": "CV", "DimensionName": "Coverage"},
+        {"DimensionID": "CF", "DimensionName": "Confidence"},
+    ],
+    "Entities": [
+        {"EntitiyID": "E01", "EntityName": "Business Goal", "StageID": "ST"},
+        {"EntitiyID": "E02", "EntityName": "Business Objective", "StageID": "ST"},
+        {"EntitiyID": "E03", "EntityName": "Business Problem", "StageID": "ST"},
+        {"EntitiyID": "E04", "EntityName": "Change Strategy", "StageID": "ST"},
+        {"EntitiyID": "E05", "EntityName": "Solution Success Measure", "StageID": "TC"},
+        {"EntitiyID": "E06", "EntityName": "Solution Component", "StageID": "TC"},
+        {"EntitiyID": "E07", "EntityName": "Solution Requirement", "StageID": "TC"},
+        {"EntitiyID": "E08", "EntityName": "Solution Architecture", "StageID": "SD"},
+        {"EntitiyID": "E09", "EntityName": "Solution Specification", "StageID": "SD"},
+        {"EntitiyID": "E10", "EntityName": "Solution Verification", "StageID": "SD"},
+        {"EntitiyID": "E11", "EntityName": "Implementation Plan", "StageID": "IP"},
+        {"EntitiyID": "E12", "EntityName": "Implemented Solution", "StageID": "IP"},
+        {"EntitiyID": "E13", "EntityName": "Trial Operation", "StageID": "IP"},
+        {"EntitiyID": "E14", "EntityName": "Full Operation", "StageID": "IP"},
+        {"EntitiyID": "E15", "EntityName": "Solution Effectiveness", "StageID": "SE"},
+        {"EntitiyID": "E16", "EntityName": "Solution Limitation", "StageID": "SE"},
+        {"EntitiyID": "E17", "EntityName": "Solution Improvement Recommendation", "StageID": "SE"},
+    ],
+    "ScoringItems": [
+        {"EntityID": "E01", "DimensionID": "EX"},
+        {"EntityID": "E02", "DimensionID": "EX"},
+        {"EntityID": "E02", "DimensionID": "QL"},
+        {"EntityID": "E03", "DimensionID": "EX"},
+        {"EntityID": "E03", "DimensionID": "QL"},
+        {"EntityID": "E03", "DimensionID": "CV"},
+        {"EntityID": "E04", "DimensionID": "EX"},
+        {"EntityID": "E04", "DimensionID": "QL"},
+        {"EntityID": "E04", "DimensionID": "CV"},
+        {"EntityID": "E05", "DimensionID": "EX"},
+        {"EntityID": "E05", "DimensionID": "QL"},
+        {"EntityID": "E06", "DimensionID": "EX"},
+        {"EntityID": "E07", "DimensionID": "EX"},
+        {"EntityID": "E07", "DimensionID": "QL"},
+        {"EntityID": "E08", "DimensionID": "EX"},
+        {"EntityID": "E08", "DimensionID": "QL"},
+        {"EntityID": "E09", "DimensionID": "EX"},
+        {"EntityID": "E09", "DimensionID": "QL"},
+        {"EntityID": "E10", "DimensionID": "EX"},
+        {"EntityID": "E10", "DimensionID": "QL"},
+        {"EntityID": "E11", "DimensionID": "EX"},
+        {"EntityID": "E11", "DimensionID": "QL"},
+        {"EntityID": "E12", "DimensionID": "EX"},
+        {"EntityID": "E12", "DimensionID": "QL"},
+        {"EntityID": "E13", "DimensionID": "EX"},
+        {"EntityID": "E13", "DimensionID": "QL"},
+        {"EntityID": "E14", "DimensionID": "EX"},
+        {"EntityID": "E14", "DimensionID": "QL"},
+        {"EntityID": "E15", "DimensionID": "EX"},
+        {"EntityID": "E15", "DimensionID": "QL"},
+        {"EntityID": "E16", "DimensionID": "EX"},
+        {"EntityID": "E16", "DimensionID": "QL"},
+        {"EntityID": "E17", "DimensionID": "EX"},
+        {"EntityID": "E17", "DimensionID": "QL"},
+    ],
+    "Scores": [],
 }
 
 
@@ -241,7 +318,7 @@ class SQLiteRepository:
 
                 if existing:
                     continue
-                if sheet_name in {"Responses", "ResponseHistory", "UserConsents"}:
+                if sheet_name in {"Responses", "ResponseHistory", "UserConsents", "Scores"}:
                     continue
                 headers = SHEET_HEADERS.get(sheet_name, [])
                 if not headers:
@@ -896,7 +973,7 @@ class TursoRepository(SQLiteRepository):
             debug(f"Found {existing} existing rows in '{sheet_name}'.")
             if existing:
                 continue
-            if sheet_name in {"Responses", "ResponseHistory", "UserConsents"}:
+            if sheet_name in {"Responses", "ResponseHistory", "UserConsents", "Scores"}:
                 continue
             headers = SHEET_HEADERS.get(sheet_name, [])
             if not headers:
