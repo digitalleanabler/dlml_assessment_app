@@ -92,3 +92,30 @@ def is_question_visible(
         if connector in {"AND", "OR"}:
             tokens.append(connector)
     return _evaluate_tokens(tokens)
+
+
+def visible_responses(
+    questions: Iterable[dict[str, Any]],
+    conditions_by_question: dict[str, list[dict[str, Any]]],
+    responses: dict[str, Any],
+) -> dict[str, str]:
+    """Returns a copy of `responses` with every currently-hidden question's value
+    blanked to "". A hidden question's stored value may still be a preserved answer
+    from before it was hidden (preserve-on-hide, 03-business-rules.md) - from the
+    respondent's point of view that question was never reached, so anything reading
+    "what has this respondent actually answered" other than the resume-editing UI
+    itself (e.g. score computation) must not see it.
+
+    Every question's visibility is evaluated against the original, unmodified
+    `responses` - never against the partially-blanked copy being built - so blanking
+    one question's value can't perturb another question's visibility check, matching
+    how visibility is computed everywhere else in this app (one pass over a single
+    fixed snapshot)."""
+    effective = dict(responses)
+    for question in questions:
+        question_id = str(question.get("QuestionID", "") or "").strip()
+        if not question_id:
+            continue
+        if not is_question_visible(question, conditions_by_question.get(question_id, []), responses):
+            effective[question_id] = ""
+    return effective

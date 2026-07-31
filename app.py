@@ -850,6 +850,33 @@ def render_export_pdf_link(pdf_bytes: bytes) -> None:
     )
 
 
+def write_scores_workbook(repo: SQLiteRepository) -> Path:
+    """Local-development-only debug convenience: dumps the whole current Scores
+    table (every company, not just whichever one triggered the recompute) to an
+    .xlsx file next to the real database, so it can be eyeballed without a SQLite
+    client. Only ever called when `type(repo) is SQLiteRepository` (see the
+    "Compute scores" admin control below) - never on TursoRepository (cloud) or
+    InMemoryRepository (no real file). `openpyxl` is imported here, not at module
+    level, so it's never required on the cloud code path at all."""
+    from openpyxl import Workbook
+
+    headers = ["CompanyID", "EntityID", "DimensionID", "TotalScore", "ReceivedScore"]
+    rows = sorted(
+        repo.rows("Scores"),
+        key=lambda row: (row.get("CompanyID", ""), row.get("EntityID", ""), row.get("DimensionID", "")),
+    )
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Scores"
+    worksheet.append(headers)
+    for row in rows:
+        worksheet.append([row.get(header, "") for header in headers])
+
+    output_path = repo.database_path.parent / "dlmlassessmentdb (scores).xlsx"
+    workbook.save(output_path)
+    return output_path
+
+
 def render_question_page(
     page: dict[str, Any],
     design_data: dict[str, Any],
@@ -1090,6 +1117,23 @@ def main() -> None:
                 if hasattr(repo, "invalidate_session"):
                     repo.invalidate_session()
                 st.rerun()
+
+        # Development/debug only - independent of "Submit assessment" so scores can be
+        # spot-checked mid-survey without freezing it. See 03-business-rules.md,
+        # "Compute scores (debug)", and ADR-015 in 07-decisions.md.
+        with st.expander("Compute scores (debug)"):
+            st.caption("Computes ReceivedScore/TotalScore for this company from its currently-visible answers and writes them to the Scores table. Development/debug only - does not require submitting.")
+            if st.button("Compute scores now", key="admin_compute_scores"):
+                score_rows = repo.compute_and_save_scores(identity["CompanyID"])
+                st.success(f"Computed {len(score_rows)} score row(s) for {identity['CompanyID']}.")
+                if score_rows:
+                    st.dataframe(score_rows, hide_index=True)
+                if type(repo) is SQLiteRepository:
+                    try:
+                        workbook_path = write_scores_workbook(repo)
+                        st.caption(f"Debug workbook written to {workbook_path}")
+                    except Exception as exc:
+                        st.warning(f"Scores were saved, but the debug workbook could not be written: {exc}")
 
     # ADR-011: exactly two outcomes when a page-dirty navigation/sign-out was
     # attempted - "Leave without saving" (discard this page's local changes,
