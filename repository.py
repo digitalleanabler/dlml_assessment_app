@@ -20,8 +20,8 @@ else:
     LIBSQL_IMPORT_ERROR = None
 
 
-SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "QuestionVisibility", "Responses", "ResponseHistory", "UserConsents", "Stages", "Dimensions", "Entities", "ScoringItems", "Scores")
-STATIC_TABLES = {"Pages", "Questions", "QuestionOptions", "QuestionConditions", "Stages", "Dimensions", "Entities", "ScoringItems"}
+SHEETS = ("Companies", "Users", "Pages", "Questions", "QuestionOptions", "QuestionConditions", "QuestionVisibility", "Responses", "ResponseHistory", "UserConsents", "Stages", "Dimensions", "Entities", "ScoringItems", "ScoringConditions", "ScoringConditionTerms", "Scores")
+STATIC_TABLES = {"Pages", "Questions", "QuestionOptions", "QuestionConditions", "Stages", "Dimensions", "Entities", "ScoringItems", "ScoringConditions", "ScoringConditionTerms"}
 # Step 4.4: tables keyed by (CompanyID, QuestionID) get a real UNIQUE index so a single
 # INSERT ... ON CONFLICT (...) DO UPDATE can replace the old "SELECT to check existence,
 # then branch to INSERT or UPDATE" pattern used throughout this module.
@@ -47,6 +47,11 @@ SHEET_HEADERS = {
     # entity by "EntityID" (spelled correctly) instead - see 02-data-model.md.
     "Entities": ["EntitiyID", "EntityName", "StageID"],
     "ScoringItems": ["EntityID", "DimensionID"],
+    # "ScoringItem" here is a denormalized "{EntityID}-{DimensionID}" string that always
+    # matches this row's own EntityID/DimensionID columns (verified against the live
+    # database) - not an independent value to set separately.
+    "ScoringConditions": ["ConditionID", "ScoringItem", "EntityID", "DimensionID", "ScoreType", "IncrementingScore", "Logic"],
+    "ScoringConditionTerms": ["ConditionID", "QuestionID", "ActivatingOption"],
     "Scores": ["CompanyID", "EntityID", "DimensionID", "TotalScore", "ReceivedScore"],
 }
 SEED: dict[str, list[dict[str, str]]] = {
@@ -156,6 +161,17 @@ SEED: dict[str, list[dict[str, str]]] = {
         {"EntityID": "E17", "DimensionID": "EX"},
         {"EntityID": "E17", "DimensionID": "QL"},
     ],
+    # ScoringConditions/ScoringConditionTerms are deliberately seeded empty, unlike
+    # Stages/Dimensions/Entities/ScoringItems above. The live database's real rows for
+    # these two tables reference QuestionIDs (Q001, Q005, ... up to Q119+) and
+    # OptionValues from the real ~134-question production survey - not the minimal
+    # 3-question demo survey seeded into SEED["Questions"]/SEED["QuestionOptions"]
+    # above. Copying the real rows here would silently reference nonexistent (or,
+    # worse, wrong/coincidentally-reused) QuestionIDs in InMemoryRepository's demo mode
+    # and in any from-scratch database bootstrap. See 02-data-model.md and
+    # 08-status-and-open-questions.md [g14].
+    "ScoringConditions": [],
+    "ScoringConditionTerms": [],
     "Scores": [],
 }
 
