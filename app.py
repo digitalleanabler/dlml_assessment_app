@@ -260,12 +260,21 @@ def value_input(question: dict[str, str], options: list[dict[str, str]], current
         value = st.text_input(label, key=key, disabled=disabled, placeholder="YYYY-MM-DD")
     else:
         if kind == "YESNO":
-            options = [{"OptionValue": "", "DisplayText": "Select an answer"}, {"OptionValue": "YES", "DisplayText": "Yes"}, {"OptionValue": "NO", "DisplayText": "No"}]
-        choices = [("", "Select an answer")] + [(option["OptionValue"], option["DisplayText"]) for option in options]
-        if key not in st.session_state or st.session_state[key] == current:
-            st.session_state[key] = next((option for option in choices if option[0] == current), choices[0])
-        choice = st.radio(label, choices, format_func=lambda item: item[1], key=key, disabled=disabled, horizontal=True)
-        value = choice[0]
+            options = [{"OptionValue": "YES", "DisplayText": "Yes"}, {"OptionValue": "NO", "DisplayText": "No"}]
+        valid_options = [
+            (option["OptionValue"], option["DisplayText"])
+            for option in options
+            if str(option.get("OptionValue", "")).strip()
+        ]
+        if valid_options:
+            choices = [("", "Select an answer")] + valid_options
+            if key not in st.session_state or st.session_state[key] == current:
+                st.session_state[key] = next((option for option in choices if option[0] == current), choices[0])
+            choice = st.radio(label, choices, format_func=lambda item: item[1], key=key, disabled=disabled, horizontal=True)
+            value = choice[0]
+        else:
+            st.markdown(label)
+            value = ""
 
     if kind in {"TEXT", "NUMBER", "DATE"}:
         widget_state = st.session_state.get(key, value)
