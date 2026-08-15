@@ -271,7 +271,6 @@ class SQLiteRepository:
         self._rows_cache: dict[str, list[dict[str, str]]] = {}
         self._design_cache: dict[str, Any] | None = None
         self._login_cache: dict[str, list[dict[str, str]]] = {}
-        self._history_counter = 0
         self._initialize_schema()
 
     def _connect(self) -> sqlite3.Connection:
@@ -424,7 +423,6 @@ class SQLiteRepository:
         self._rows_cache.clear()
         self._design_cache = None
         self._login_cache.clear()
-        self._history_counter = 0
 
     def load_login_data(self, force: bool = False) -> None:
         if self._login_cache and not force:
@@ -924,7 +922,6 @@ class TursoRepository(SQLiteRepository):
         self._rows_cache: dict[str, list[dict[str, str]]] = {}
         self._design_cache: dict[str, Any] | None = None
         self._login_cache: dict[str, list[dict[str, str]]] = {}
-        self._history_counter = 0
         self._initialize_schema()
 
     def _disconnect(self) -> None:
@@ -1035,7 +1032,6 @@ class TursoRepository(SQLiteRepository):
         self._rows_cache.clear()
         self._design_cache = None
         self._login_cache.clear()
-        self._history_counter = 0
 
     def load_login_data(self, force: bool = False) -> None:
         if self._login_cache and not force:
@@ -1486,7 +1482,6 @@ class InMemoryRepository:
         self._static_cache: dict[str, list[dict[str, str]]] = {}
         self._design_cache: dict[str, Any] | None = None
         self._login_cache: dict[str, list[dict[str, str]]] = {}
-        self._history_counter = 0
 
     def ping(self) -> None:
         """No real I/O to check here: everything lives in-process memory. Present
@@ -1595,7 +1590,6 @@ class InMemoryRepository:
         self._static_cache.clear()
         self._design_cache = None
         self._login_cache.clear()
-        self._history_counter = 0
 
     def load_login_data(self, force: bool = False) -> None:
         if self._login_cache and not force:
@@ -1743,8 +1737,7 @@ class InMemoryRepository:
         return current_responses
 
     def append_response_history(self, company_id: str, question_id: str, old_value: str, new_value: str, email: str, stamp: str) -> None:
-        self._history_counter += 1
-        self.rows("ResponseHistory").append({"HistoryID": f"H{self._history_counter:04}", "CompanyID": company_id, "QuestionID": question_id, "OldValue": old_value, "NewValue": new_value, "ModifiedBy": email, "ModifiedTime": stamp})
+        self.rows("ResponseHistory").append({"CompanyID": company_id, "QuestionID": question_id, "OldValue": old_value, "NewValue": new_value, "ModifiedBy": email, "ModifiedTime": stamp})
 
     def submit(self, company_id: str, email: str) -> None:
         company = self.company(company_id)
