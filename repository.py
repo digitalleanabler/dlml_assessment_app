@@ -159,11 +159,11 @@ SEED: dict[str, list[dict[str, str]]] = {
     ],
     # Unlike the real live-database rows (which reference QuestionIDs Q001, Q005, ...
     # up to Q119+ from the real ~134-question production survey), this is a minimal,
-    # self-contained example tied to the demo survey's own Q002/Q003 - deliberately
-    # mirroring doc/SCORING_HANDOFF.md's own E01-EX worked example (one unconditional
-    # Total baseline + one single-term Received condition), so InMemoryRepository demo
-    # mode can exercise compute_and_save_scores() end-to-end without depending on the
-    # real production survey. See ADR-014's amendment and ADR-015 in 07-decisions.md.
+    # self-contained example tied to the demo survey's own Q002/Q003 - one unconditional
+    # Total baseline + one single-term Received condition, the same E01-EX shape exercised
+    # by test/test_unit/test_scoring_engine.py. Left in place as reference data even
+    # though the live app no longer computes scores itself - see ADR-018 in 07-decisions.md
+    # (score computation/reporting moved to db/A1_score_analysis_report.py).
     "ScoringConditions": [
         {"ConditionID": "SC001", "ScoringItem": "E01-EX", "EntityID": "E01", "DimensionID": "EX", "ScoreType": "Received", "IncrementingScore": "100", "Logic": ""},
         {"ConditionID": "SC002", "ScoringItem": "E01-EX", "EntityID": "E01", "DimensionID": "EX", "ScoreType": "Total", "IncrementingScore": "100", "Logic": ""},
@@ -912,60 +912,6 @@ class SQLiteRepository:
             debug(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}'.")
         self.clear_cache()
 
-    def compute_and_save_scores(self, company_id: str) -> list[dict[str, str]]:
-        """Computes ReceivedScore/TotalScore per (EntityID, DimensionID) for this
-        company from its currently-visible answers (doc/SCORING_HANDOFF.md's
-        algorithm) and replaces this company's Scores rows with the result.
-
-        Triggered by the sidebar "Compute scores" debug control, independent of
-        submit() - see doc/03-business-rules.md. Safe to call repeatedly (e.g. before
-        submission, to spot-check in-progress scoring): each call deletes this
-        company's existing Scores rows and re-inserts the freshly computed ones in one
-        transaction, so no UNIQUE index is needed for upsert semantics - a full
-        per-company replace is idempotent by construction and also correctly drops any
-        row that no longer computes if ScoringConditions itself changes later.
-
-        A hidden question's Responses value may be a stale answer preserved from
-        before it was hidden (preserve-on-hide) - condition_engine.visible_responses()
-        blanks those out before scoring so a question the respondent never actually
-        reached can't contribute. That filtered view is local to this method only; it
-        is never written back to Responses or exposed to PageSession/session_state."""
-        company_id = str(company_id or "").strip()
-        if not company_id:
-            return []
-
-        try:
-            from .condition_engine import visible_responses
-            from .scoring_engine import compute_scores
-        except ImportError:  # pragma: no cover - support running module directly
-            from condition_engine import visible_responses
-            from scoring_engine import compute_scores
-
-        questions = self.rows("Questions")
-        conditions_by_question: dict[str, list[dict[str, str]]] = {}
-        for row in self.rows("QuestionConditions"):
-            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
-
-        raw_responses = self.responses_for(company_id)
-        effective_responses = visible_responses(questions, conditions_by_question, raw_responses)
-
-        scoring_conditions = self.rows("ScoringConditions")
-        scoring_terms = self.rows("ScoringConditionTerms")
-        score_rows = compute_scores(scoring_conditions, scoring_terms, effective_responses)
-
-        with self._connect() as conn:
-            conn.execute('DELETE FROM "Scores" WHERE "CompanyID" = ?', (company_id,))
-            if score_rows:
-                _multi_row_insert(
-                    conn, "Scores",
-                    columns=["CompanyID", "EntityID", "DimensionID", "TotalScore", "ReceivedScore"],
-                    rows=[(company_id, row["EntityID"], row["DimensionID"], row["TotalScore"], row["ReceivedScore"]) for row in score_rows],
-                )
-            conn.commit()
-            debug(f"Computed and saved {len(score_rows)} Scores row(s) for company '{company_id}'.")
-
-        return score_rows
-
 
 class TursoRepository(SQLiteRepository):
     """Repository backed by a remote Turso database for cloud deployment."""
@@ -1538,47 +1484,6 @@ class TursoRepository(SQLiteRepository):
         debug(f"Company '{company_id}' submitted successfully by '{email}' at '{stamp}'.")
         self.clear_cache()
 
-    def compute_and_save_scores(self, company_id: str) -> list[dict[str, str]]:
-        """See SQLiteRepository.compute_and_save_scores for the full rationale.
-        Overridden only for Turso's connection style (no context manager, explicit
-        commit()) - matches every other write method in this class."""
-        company_id = str(company_id or "").strip()
-        if not company_id:
-            return []
-
-        try:
-            from .condition_engine import visible_responses
-            from .scoring_engine import compute_scores
-        except ImportError:  # pragma: no cover - support running module directly
-            from condition_engine import visible_responses
-            from scoring_engine import compute_scores
-
-        questions = self.rows("Questions")
-        conditions_by_question: dict[str, list[dict[str, str]]] = {}
-        for row in self.rows("QuestionConditions"):
-            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
-
-        raw_responses = self.responses_for(company_id)
-        effective_responses = visible_responses(questions, conditions_by_question, raw_responses)
-
-        scoring_conditions = self.rows("ScoringConditions")
-        scoring_terms = self.rows("ScoringConditionTerms")
-        score_rows = compute_scores(scoring_conditions, scoring_terms, effective_responses)
-
-        conn = self._connect()
-        conn.execute('DELETE FROM "Scores" WHERE "CompanyID" = ?', (company_id,))
-        if score_rows:
-            _multi_row_insert(
-                conn, "Scores",
-                columns=["CompanyID", "EntityID", "DimensionID", "TotalScore", "ReceivedScore"],
-                rows=[(company_id, row["EntityID"], row["DimensionID"], row["TotalScore"], row["ReceivedScore"]) for row in score_rows],
-            )
-        conn.commit()
-        debug(f"Computed and saved {len(score_rows)} Scores row(s) for company '{company_id}'.")
-
-        return score_rows
-
-
 class InMemoryRepository:
     """For local UI testing only. Each Streamlit session receives its own copy."""
 
@@ -1852,42 +1757,3 @@ class InMemoryRepository:
         assert company
         stamp = now()
         company.update({"Status": "Submitted", "LastUpdated": stamp, "SubmittedBy": email, "SubmittedTime": stamp})
-
-    def compute_and_save_scores(self, company_id: str) -> list[dict[str, str]]:
-        """In-memory equivalent of SQLiteRepository.compute_and_save_scores - see
-        there for the full rationale (visibility filtering, delete+insert replace)."""
-        company_id = str(company_id or "").strip()
-        if not company_id:
-            return []
-
-        try:
-            from .condition_engine import visible_responses
-            from .scoring_engine import compute_scores
-        except ImportError:  # pragma: no cover - support running module directly
-            from condition_engine import visible_responses
-            from scoring_engine import compute_scores
-
-        questions = self.rows("Questions")
-        conditions_by_question: dict[str, list[dict[str, str]]] = {}
-        for row in self.rows("QuestionConditions"):
-            conditions_by_question.setdefault(row["QuestionID"], []).append(row)
-
-        raw_responses = self.responses_for(company_id)
-        effective_responses = visible_responses(questions, conditions_by_question, raw_responses)
-
-        scoring_conditions = self.rows("ScoringConditions")
-        scoring_terms = self.rows("ScoringConditionTerms")
-        score_rows = compute_scores(scoring_conditions, scoring_terms, effective_responses)
-
-        self.tables.setdefault("Scores", [])
-        self.tables["Scores"] = [row for row in self.tables["Scores"] if row.get("CompanyID") != company_id]
-        for row in score_rows:
-            self.tables["Scores"].append({
-                "CompanyID": company_id,
-                "EntityID": row["EntityID"],
-                "DimensionID": row["DimensionID"],
-                "TotalScore": row["TotalScore"],
-                "ReceivedScore": row["ReceivedScore"],
-            })
-
-        return score_rows

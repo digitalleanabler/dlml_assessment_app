@@ -1,11 +1,13 @@
 """Data-driven score computation for the ScoringConditions and
 ScoringConditionTerms sheets.
 
-The algorithm implemented here is specified, worked through with real
-examples, and verified against the live database in `doc/SCORING_HANDOFF.md`
-- read that document rather than reverse-engineering the rules from this
-module alone. This file intentionally only restates the parts of the
-algorithm that matter for the code itself.
+The algorithm here was originally specified and worked through with real
+examples in a handoff document, since retired now that the algorithm is
+built and verified (see ADR-019 in doc/07-decisions.md). This module and
+`test/test_unit/test_scoring_engine.py` (whose fixtures were taken directly
+from that handoff document's own worked examples) are the living source of
+truth for the algorithm now - each docstring below restates the rule it
+implements inline, so reading this file top to bottom is sufficient.
 
 `responses` here is expected to already be a *visibility-filtered* view
 (see `condition_engine.visible_responses()`) - this module has no opinion
@@ -21,7 +23,7 @@ from typing import Any, Iterable
 # ScoringConditionTerms.ActivatingOption sentinel for a scoring item reached
 # through a Text-answer question (rather than Choice/YesNo): means "this
 # QuestionID was answered at all", not a literal option value to compare
-# against (doc/SCORING_HANDOFF.md section 7).
+# against.
 TEXT_ANSWER_SENTINEL = '""'
 
 
@@ -32,7 +34,7 @@ def _condition_satisfied(
 ) -> bool:
     """A condition matches iff every one of its ScoringConditionTerms rows
     matches the respondent's recorded answer exactly. Zero term rows means
-    unconditional - vacuously matches (doc/SCORING_HANDOFF.md section 4/5)."""
+    unconditional - vacuously matches."""
     for term in terms_by_condition.get(condition_id, []):
         question_id = str(term.get("QuestionID", "") or "")
         activating_option = str(term.get("ActivatingOption", "") or "")
@@ -73,7 +75,7 @@ def compute_scores(
 
     Total and Received are computed with the identical matching logic, just
     summed separately by ScoreType - Total is not a separate "maximum across
-    all possible paths" computation (doc/SCORING_HANDOFF.md section 3).
+    all possible paths" computation.
 
     Returns one dict per (EntityID, DimensionID) pair that has at least one
     ScoringConditions row of either ScoreType - a pair with zero rules
