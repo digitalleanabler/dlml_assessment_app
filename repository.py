@@ -675,7 +675,7 @@ class SQLiteRepository:
         still has the old O(1 question) round-trip shape *per call* via
         _ensure_company_runtime_rows() - calling it once per changed answer
         reintroduces the O(changed_answers x total_questions) fan-out the batched
-        path was built to eliminate (see code_analysis_r03, section 2.5). Do not
+        path was built to eliminate. Do not
         wire this into any per-answer save loop; use save_responses() instead."""
         with self._connect() as conn:
             self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=self.responses_for(company_id), conn=conn)
@@ -708,8 +708,8 @@ class SQLiteRepository:
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
         """LEGACY / NOT CALLED BY app.py. Kept for interface parity only. Visibility
         is computed purely in memory during rendering/readiness checks
-        (PageSession.recompute_visibility in app.py, per code_analysis_r03 section
-        4.2) and QuestionVisibility is written as a batched diff inside
+        (PageSession.recompute_visibility in app.py; see ADR-001 in
+        07-decisions.md) and QuestionVisibility is written as a batched diff inside
         save_responses(). This method still round-trips through
         _ensure_company_runtime_rows() per question and also calls the broad
         self.clear_cache() (wiping static/session tiers too), so calling it from any
@@ -1262,7 +1262,7 @@ class TursoRepository(SQLiteRepository):
         Turso specifically, that means every one of those round trips pays network
         latency, so calling this once per changed answer reintroduces the
         O(changed_answers x total_questions) network fan-out the batched path was
-        built to eliminate (see code_analysis_r03, section 2.5). Do not wire this
+        built to eliminate. Do not wire this
         into any per-answer save loop; use save_responses() instead."""
         conn = self._connect()
         self._ensure_company_runtime_rows(company_id, questions=self.rows("Questions"), responses=self.responses_for(company_id), conn=conn)
@@ -1299,8 +1299,8 @@ class TursoRepository(SQLiteRepository):
     def refresh_question_visibility(self, company_id: str, responses: dict[str, str] | None = None) -> dict[str, str]:
         """LEGACY / NOT CALLED BY app.py. Kept for interface parity only. Visibility
         is computed purely in memory during rendering/readiness checks
-        (PageSession.recompute_visibility in app.py, per code_analysis_r03 section
-        4.2) and QuestionVisibility is written as a batched diff inside
+        (PageSession.recompute_visibility in app.py; see ADR-001 in
+        07-decisions.md) and QuestionVisibility is written as a batched diff inside
         save_responses(). This method still round-trips through
         _ensure_company_runtime_rows() per question (each one a network round trip
         on Turso) and also calls the broad self.clear_cache() (wiping static/session
