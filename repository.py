@@ -157,7 +157,7 @@ SEED: dict[str, list[dict[str, str]]] = {
     # Total baseline + one single-term Received condition, the same E01-EX shape exercised
     # by test/test_unit/test_scoring_engine.py. Left in place as reference data even
     # though the live app no longer computes scores itself - see ADR-018 in 07-decisions.md
-    # (score computation/reporting moved to db/A1_score_analysis_report.py).
+    # (score computation/reporting moved to data/05_analyze_responses_in_db.py).
     "ScoringConditions": [
         # Different labels (a conditional Received event, an unconditional
         # Total baseline event) - different ScoringLabelIDs, unlike two
@@ -185,7 +185,7 @@ def libsql_available() -> bool:
 
 
 def default_database_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "db" / "dlmlassessmentdb.sqlite"
+    return Path(__file__).resolve().parent.parent / "data" / "dlmlassessmentdb.sqlite"
 
 
 def default_workbook_path() -> Path:
