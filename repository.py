@@ -49,7 +49,7 @@ SHEET_HEADERS = {
     # "ScoringItem" here is a denormalized "{EntityID}-{DimensionID}" string that always
     # matches this row's own EntityID/DimensionID columns (verified against the live
     # database) - not an independent value to set separately.
-    "ScoringConditions": ["ConditionID", "ScoringItem", "EntityID", "DimensionID", "ScoreType", "IncrementingScore", "Logic"],
+    "ScoringConditions": ["ConditionID", "ScoringLabelID", "ScoringItem", "EntityID", "DimensionID", "ScoreType", "IncrementingScore", "Logic"],
     "ScoringConditionTerms": ["ConditionID", "QuestionID", "ActivatingOption"],
     "Scores": ["CompanyID", "EntityID", "DimensionID", "TotalScore", "ReceivedScore"],
 }
@@ -159,11 +159,14 @@ SEED: dict[str, list[dict[str, str]]] = {
     # though the live app no longer computes scores itself - see ADR-018 in 07-decisions.md
     # (score computation/reporting moved to db/A1_score_analysis_report.py).
     "ScoringConditions": [
-        {"ConditionID": "SC001", "ScoringItem": "E01-EX", "EntityID": "E01", "DimensionID": "EX", "ScoreType": "Received", "IncrementingScore": "100", "Logic": ""},
-        {"ConditionID": "SC002", "ScoringItem": "E01-EX", "EntityID": "E01", "DimensionID": "EX", "ScoreType": "Total", "IncrementingScore": "100", "Logic": ""},
+        # Different labels (a conditional Received event, an unconditional
+        # Total baseline event) - different ScoringLabelIDs, unlike two
+        # items sharing one label, which would share one.
+        {"ConditionID": "C001", "ScoringLabelID": "S001", "ScoringItem": "E01-EX", "EntityID": "E01", "DimensionID": "EX", "ScoreType": "Received", "IncrementingScore": "100", "Logic": ""},
+        {"ConditionID": "C002", "ScoringLabelID": "S002", "ScoringItem": "E01-EX", "EntityID": "E01", "DimensionID": "EX", "ScoreType": "Total", "IncrementingScore": "100", "Logic": ""},
     ],
     "ScoringConditionTerms": [
-        {"ConditionID": "SC001", "QuestionID": "Q003", "ActivatingOption": "YES"},
+        {"ConditionID": "C001", "QuestionID": "Q003", "ActivatingOption": "YES"},
     ],
     "Scores": [],
 }
