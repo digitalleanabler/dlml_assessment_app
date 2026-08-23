@@ -33,7 +33,7 @@ SHEET_HEADERS = {
     "Companies": ["CompanyID", "CompanyName", "Status", "LastUpdated", "SubmittedBy", "SubmittedTime"],
     "Users": ["Email", "Name", "CompanyID"],
     "Pages": ["PageID", "PageTitle"],
-    "Questions": ["QuestionID", "PageID", "Sequence", "QuestionText", "AnswerType", "Required"],
+    "Questions": ["QuestionID", "PageID", "Sequence", "QuestionText", "FullAssessmentQuestion", "AnswerType", "Required"],
     "QuestionOptions": ["OptionID", "QuestionID", "DisplayOrder", "OptionValue", "DisplayText"],
     "QuestionConditions": ["LogicID", "QuestionID", "Seq", "LeftParen", "DependsOnQuestion", "Operator", "ExpectedValue", "RightParen", "LogicalWithNext"],
     "QuestionVisibility": ["CompanyID", "QuestionID", "Visible"],
@@ -74,9 +74,9 @@ SEED: dict[str, list[dict[str, str]]] = {
         {"PageID": "P003", "PageTitle": "???"},
     ],
     "Questions": [
-        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "???", "AnswerType": "Text", "Required": "TRUE"},
-        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "???", "AnswerType": "Choice", "Required": "TRUE"},
-        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "???", "AnswerType": "Choice", "Required": "TRUE"},
+        {"QuestionID": "Q001", "PageID": "P001", "Sequence": "1", "QuestionText": "???", "FullAssessmentQuestion": "", "AnswerType": "Text", "Required": "TRUE"},
+        {"QuestionID": "Q002", "PageID": "P002", "Sequence": "2", "QuestionText": "???", "FullAssessmentQuestion": "", "AnswerType": "Choice", "Required": "TRUE"},
+        {"QuestionID": "Q003", "PageID": "P002", "Sequence": "3", "QuestionText": "???", "FullAssessmentQuestion": "", "AnswerType": "Choice", "Required": "TRUE"},
     ],
     "QuestionOptions": [
         {"OptionID": "O002A", "QuestionID": "Q002", "DisplayOrder": "1", "OptionValue": "NONE", "DisplayText": "None"},
@@ -157,7 +157,7 @@ SEED: dict[str, list[dict[str, str]]] = {
     # Total baseline + one single-term Received condition, the same E01-EX shape exercised
     # by test/test_unit/test_scoring_engine.py. Left in place as reference data even
     # though the live app no longer computes scores itself - see ADR-018 in 07-decisions.md
-    # (score computation/reporting moved to data/05_analyze_responses_in_db.py).
+    # (score computation/reporting moved to data/07_create_report.py).
     "ScoringConditions": [
         # Different labels (a conditional Received event, an unconditional
         # Total baseline event) - different ScoringLabelIDs, unlike two
