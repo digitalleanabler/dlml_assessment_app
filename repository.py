@@ -104,12 +104,19 @@ SEED: dict[str, list[dict[str, str]]] = {
         {"DimensionID": "QL", "DimensionName": "Quality"},
         {"DimensionID": "CF", "DimensionName": "Confidence"},
     ],
+    # 16-entity DLML model (matches methodology/doc/08-glossary.md and the
+    # real production seed, data/e_template/DLML Assessment Questions
+    # (template).sqlite) - see ADR-029 in 07-decisions.md for the
+    # correction history (E05 renamed from "Solution Success Measure" to
+    # "Solution"; old separate E13 "Trial Operation"/E14 "Full Operation"
+    # merged into one E13 "Solution Operation"; E15-E17 renumbered down to
+    # E14-E16, no E17).
     "Entities": [
         {"EntityID": "E01", "EntityName": "Business Goal", "StageID": "ST"},
         {"EntityID": "E02", "EntityName": "Business Objective", "StageID": "ST"},
         {"EntityID": "E03", "EntityName": "Business Problem", "StageID": "ST"},
         {"EntityID": "E04", "EntityName": "Change Strategy", "StageID": "ST"},
-        {"EntityID": "E05", "EntityName": "Solution Success Measure", "StageID": "TC"},
+        {"EntityID": "E05", "EntityName": "Solution", "StageID": "TC"},
         {"EntityID": "E06", "EntityName": "Solution Component", "StageID": "TC"},
         {"EntityID": "E07", "EntityName": "Solution Requirement", "StageID": "TC"},
         {"EntityID": "E08", "EntityName": "Solution Architecture", "StageID": "SD"},
@@ -117,11 +124,10 @@ SEED: dict[str, list[dict[str, str]]] = {
         {"EntityID": "E10", "EntityName": "Solution Verification", "StageID": "SD"},
         {"EntityID": "E11", "EntityName": "Implementation Plan", "StageID": "IP"},
         {"EntityID": "E12", "EntityName": "Implemented Solution", "StageID": "IP"},
-        {"EntityID": "E13", "EntityName": "Trial Operation", "StageID": "IP"},
-        {"EntityID": "E14", "EntityName": "Full Operation", "StageID": "IP"},
-        {"EntityID": "E15", "EntityName": "Solution Effectiveness", "StageID": "SE"},
-        {"EntityID": "E16", "EntityName": "Solution Limitation", "StageID": "SE"},
-        {"EntityID": "E17", "EntityName": "Solution Improvement Recommendation", "StageID": "SE"},
+        {"EntityID": "E13", "EntityName": "Solution Operation", "StageID": "IP"},
+        {"EntityID": "E14", "EntityName": "Solution Effectiveness", "StageID": "SE"},
+        {"EntityID": "E15", "EntityName": "Solution Limitation", "StageID": "SE"},
+        {"EntityID": "E16", "EntityName": "Solution Improvement Recommendation", "StageID": "SE"},
     ],
     "ScoringItems": [
         {"EntityID": "E01", "DimensionID": "EX"},
@@ -144,12 +150,17 @@ SEED: dict[str, list[dict[str, str]]] = {
         {"EntityID": "E10", "DimensionID": "EX"},
         {"EntityID": "E10", "DimensionID": "QL"},
         {"EntityID": "E11", "DimensionID": "EX"},
+        {"EntityID": "E11", "DimensionID": "QL"},
         {"EntityID": "E12", "DimensionID": "EX"},
+        {"EntityID": "E12", "DimensionID": "QL"},
         {"EntityID": "E13", "DimensionID": "EX"},
+        {"EntityID": "E13", "DimensionID": "QL"},
         {"EntityID": "E14", "DimensionID": "EX"},
+        {"EntityID": "E14", "DimensionID": "QL"},
         {"EntityID": "E15", "DimensionID": "EX"},
+        {"EntityID": "E15", "DimensionID": "QL"},
         {"EntityID": "E16", "DimensionID": "EX"},
-        {"EntityID": "E17", "DimensionID": "EX"},
+        {"EntityID": "E16", "DimensionID": "QL"},
     ],
     # Unlike the real live-database rows (which reference QuestionIDs Q001, Q005, ...
     # up to Q119+ from the real ~134-question production survey), this is a minimal,
