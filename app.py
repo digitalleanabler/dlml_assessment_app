@@ -242,10 +242,15 @@ def _is_valid_date(text: str) -> bool:
         return False
 
 
+def question_display_text(question: dict[str, str]) -> str:
+    full_text = str(question.get("FullAssessmentQuestion", "") or "").strip()
+    return full_text if full_text else question["QuestionText"]
+
+
 def value_input(question: dict[str, str], options: list[dict[str, str]], current: str, disabled: bool, draft_responses: dict[str, str]) -> str:
     question_id = str(question["QuestionID"])
     key = f"answer_{question_id}"
-    label = question["QuestionText"] + (" *" if str(question.get("Required", "")).upper() == "TRUE" else "")
+    label = question_display_text(question) + (" *" if str(question.get("Required", "")).upper() == "TRUE" else "")
     label = f"[{question_id}]: {label}"
     kind = question["AnswerType"].upper()
 
@@ -668,7 +673,7 @@ def get_missing_required_questions(
             continue
         value = responses.get(question_id, "")
         if not str(value).strip():
-            missing.append(question["QuestionText"])
+            missing.append(question_display_text(question))
     return missing
 
 
@@ -691,7 +696,7 @@ def get_page_readiness(
         if value:
             answered += 1
         else:
-            missing.append(question["QuestionText"])
+            missing.append(question_display_text(question))
     return {"answered": answered, "total": total, "completed": answered == total, "missing": missing}
 
 
@@ -772,7 +777,7 @@ def build_export_pdf_bytes(
             question_id = str(question["QuestionID"])
             kind = str(question.get("AnswerType", "")).upper()
             value = str(page_session.responses.get(question_id, "") or "")
-            story.append(Paragraph(f"[{xml_escape(question_id)}] {xml_escape(question['QuestionText'])}", question_style))
+            story.append(Paragraph(f"[{xml_escape(question_id)}] {xml_escape(question_display_text(question))}", question_style))
 
             if kind in {"TEXT", "NUMBER", "DATE"}:
                 display_value = xml_escape(value) if value.strip() else "&nbsp;"
