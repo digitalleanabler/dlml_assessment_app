@@ -168,7 +168,7 @@ SEED: dict[str, list[dict[str, str]]] = {
     # Total baseline + one single-term Received condition, the same E01-EX shape exercised
     # by test/test_unit/test_scoring_engine.py. Left in place as reference data even
     # though the live app no longer computes scores itself - see ADR-018 in 07-decisions.md
-    # (score computation/reporting moved to data/07_create_report.py).
+    # (score computation/matrix generation moved to data/07_create_matrix.py).
     "ScoringConditions": [
         # Different labels (a conditional Received event, an unconditional
         # Total baseline event) - different ScoringLabelIDs, unlike two
