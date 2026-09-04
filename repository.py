@@ -112,7 +112,7 @@ SEED: dict[str, list[dict[str, str]]] = {
         {"DimensionID": "CF", "DimensionName": "Confidence"},
     ],
     # 16-entity DLML model (matches methodology/doc/08-glossary.md and the
-    # real production seed, data/e_template/DLML Assessment Questions
+    # real production seed, data/e_db_template/DLML Assessment Questions
     # (template).sqlite) - see ADR-029 in 07-decisions.md for the
     # correction history (E05 renamed from "Solution Success Measure" to
     # "Solution"; old separate E13 "Trial Operation"/E14 "Full Operation"
@@ -203,7 +203,7 @@ def libsql_available() -> bool:
 
 
 def default_database_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "data" / "dlmlassessmentdb.sqlite"
+    return Path(__file__).resolve().parent.parent / "data" / "f_db_response" / "dlmlassessmentdb.sqlite"
 
 
 def default_workbook_path() -> Path:
