@@ -29,6 +29,13 @@ UPSERT_KEY_TABLES = ("Responses", "QuestionVisibility")
 # UserConsents is deliberately NOT in UPSERT_KEY_TABLES / SEED-skipped-only-if-empty
 # logic the way Responses/ResponseHistory are - see 02-data-model.md: it has no
 # unique key and is append-only by design (ADR-008), so it's always insert-only.
+# _initialize_schema() below creates every table as bare TEXT columns with no
+# PRIMARY KEY. The production seed and both live databases DO carry a primary key
+# on Companies ("CompanyID") and Users ("Email", "CompanyID") - added by
+# data/03_create_template.py so Turso permits a row-targeted DELETE ... WHERE
+# on them (ADR-032) - and the CREATE TABLE IF NOT EXISTS calls preserve it. A
+# from-scratch empty database (or InMemoryRepository) comes up keyless; that's
+# fine, neither deletes rows from these tables.
 SHEET_HEADERS = {
     "Companies": ["CompanyID", "CompanyName", "Status", "LastUpdated", "SubmittedBy", "SubmittedTime"],
     "Users": ["Email", "Name", "CompanyID"],
