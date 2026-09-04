@@ -398,8 +398,8 @@ class PageSession:
         question does not survive being carried across that drop the way a real
         widget interaction does. A subsequent `capture_widgets()` call can then read
         back a corrupted/blank value for a question that was never actually
-        touched - see 08-status-and-open-questions.md, [g13] - so this must stay
-        scoped to the page actually being (re)rendered, never `all_questions`."""
+        touched - so this must stay scoped to the page actually being
+        (re)rendered, never `all_questions`."""
         refreshed = dict(repo.responses_for(company_id))
         dirty = set() if force else self.dirty_ids()
         scoped_ids = {str(question["QuestionID"]) for question in (page_questions or []) if question.get("QuestionID")}
@@ -703,8 +703,9 @@ def get_page_readiness(
 def _sanitize_filename_component(text: str) -> str:
     """06-conventions.md, "PDF export filename": every character that is not a
     letter, digit, or underscore becomes '_', leading/trailing '_' stripped. Used
-    only for the PDF's internal title metadata - per ADR-009 the export anchor has
-    no `download` attribute, so this is never actually offered to the browser's
+    only for the PDF's internal title metadata - per ADR-009 (amended by ADR-021)
+    the export is a button that opens a Blob via window.open(), not an anchor with
+    a `download` attribute, so this is never actually offered to the browser's
     save dialog as a suggested filename; it is a best-effort naming intent only."""
     cleaned = re.sub(r"[^A-Za-z0-9_]", "_", text or "")
     return cleaned.strip("_")
@@ -719,9 +720,9 @@ def _export_pdf_title(company_name: str, generated_at: datetime) -> str:
 def _draw_export_page_number(canvas_obj: Any, doc: SimpleDocTemplate) -> None:
     """Bottom-right 'Page N' footer, drawn once per page via SimpleDocTemplate's
     onFirstPage/onLaterPages hooks. No total-page-count is shown (e.g. no
-    'Page N of M') - see 08-status-and-open-questions.md for why: the total is
-    only knowable after the whole story has finished flowing, which would
-    require a two-pass numbered-canvas approach; this only needs the current
+    'Page N of M') - see ADR-009's "Implemented" note in 07-decisions.md for why:
+    the total is only knowable after the whole story has finished flowing, which
+    would require a two-pass numbered-canvas approach; this only needs the current
     page, which canvas.getPageNumber() already provides mid-flow."""
     canvas_obj.saveState()
     canvas_obj.setFont("Helvetica", 9)
