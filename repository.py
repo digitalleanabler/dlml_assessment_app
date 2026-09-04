@@ -32,7 +32,7 @@ UPSERT_KEY_TABLES = ("Responses", "QuestionVisibility")
 # _initialize_schema() below creates every table as bare TEXT columns with no
 # PRIMARY KEY. The production seed and both live databases DO carry a primary key
 # on Companies ("CompanyID") and Users ("Email", "CompanyID") - added by
-# data/03_create_template.py so Turso permits a row-targeted DELETE ... WHERE
+# data/A03_create_template.py so Turso permits a row-targeted DELETE ... WHERE
 # on them (ADR-032) - and the CREATE TABLE IF NOT EXISTS calls preserve it. A
 # from-scratch empty database (or InMemoryRepository) comes up keyless; that's
 # fine, neither deletes rows from these tables.
@@ -175,7 +175,7 @@ SEED: dict[str, list[dict[str, str]]] = {
     # Total baseline + one single-term Received condition, the same E01-EX shape exercised
     # by test/test_unit/test_scoring_engine.py. Left in place as reference data even
     # though the live app no longer computes scores itself - see ADR-018 in 07-decisions.md
-    # (score computation/matrix generation moved to data/07_create_matrix.py).
+    # (score computation/matrix generation moved to data/B02_create_matrix.py).
     "ScoringConditions": [
         # Different labels (a conditional Received event, an unconditional
         # Total baseline event) - different ScoringLabelIDs, unlike two
