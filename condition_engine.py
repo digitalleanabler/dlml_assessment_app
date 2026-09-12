@@ -101,7 +101,7 @@ def visible_responses(
 ) -> dict[str, str]:
     """Returns a copy of `responses` with every currently-hidden question's value
     blanked to "". A hidden question's stored value may still be a preserved answer
-    from before it was hidden (preserve-on-hide, 03-business-rules.md) - from the
+    from before it was hidden (preserve-on-hide, 05-business-rules.md) - from the
     respondent's point of view that question was never reached, so anything reading
     "what has this respondent actually answered" other than the resume-editing UI
     itself (e.g. score computation) must not see it.

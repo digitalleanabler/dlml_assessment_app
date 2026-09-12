@@ -3,8 +3,8 @@ ScoringConditionTerms sheets.
 
 The algorithm here was originally specified and worked through with real
 examples in a handoff document, since retired now that the algorithm is
-built and verified (see ADR-019 in doc/07-decisions.md). This module and
-`test/test_unit/test_scoring_engine.py` (whose fixtures were taken directly
+built and verified (see ADR-019 in doc/09-decisions.md). This module and
+`tests/test_unit/test_scoring_engine.py` (whose fixtures were taken directly
 from that handoff document's own worked examples) are the living source of
 truth for the algorithm now - each docstring below restates the rule it
 implements inline, so reading this file top to bottom is sufficient.
@@ -48,7 +48,7 @@ def _condition_satisfied(
 ) -> bool:
     """A condition's own ScoringConditionTerms rows are combined by that
     condition's own Logic value - not always AND. `Logic == "OR"` (a flat
-    OR-series - questionnaire_modeler_app's 03-business-rules.md §8.7,
+    OR-series - questionnaire_modeler_app's 05-business-rules.md §8.7,
     that project's own ADR-031) means the condition matches iff *any*
     one of its own terms matches; anything else ("AND", or blank for the
     common single- or zero-term case) means *every* term must match, same
@@ -102,11 +102,11 @@ def compute_scores(
 
     A condition with `Logic == "OR"` is itself a flat OR-series over its
     own ScoringConditionTerms rows (questionnaire_modeler_app's
-    03-business-rules.md §8.7 and that project's own ADR-031) - the
+    05-business-rules.md §8.7 and that project's own ADR-031) - the
     questionnaire modeler collapses a scoring item's OR-alternatives into
     exactly one such row whenever the "no nested logic" rule holds, so
     this is how the ordinary case is represented today; this app's own
-    ADR-026 (07-decisions.md) made `_condition_satisfied()` handle it
+    ADR-026 (09-decisions.md) made `_condition_satisfied()` handle it
     directly by reading that row's own `Logic`.
 
     The ScoringLabelID/ScoringItem grouping below is a *second*, narrower
@@ -126,7 +126,7 @@ def compute_scores(
     A ScoringLabelID shared across *different* ScoringItems is a different
     situation entirely - a multi-token scoring label (one Event carrying
     several distinct "{EntityID}-{DimensionID}: score" tokens,
-    03-business-rules.md §8.1) - and those rows are independent rules that
+    05-business-rules.md §8.1) - and those rows are independent rules that
     must each still be counted, not OR-alternatives of each other. Grouping
     below is keyed on the full (EntityID, DimensionID, ScoreType,
     ScoringLabelID) tuple specifically so the two situations are never
@@ -140,7 +140,7 @@ def compute_scores(
 
     # Group by (EntityID, DimensionID, ScoreType, ScoringLabelID) - the full
     # tuple, not just ScoringLabelID, since one label's text can carry
-    # multiple scoring tokens (multi-token label, 03-business-rules.md
+    # multiple scoring tokens (multi-token label, 05-business-rules.md
     # §8.1), each its own (EntityID, DimensionID, ScoreType) with its own,
     # independent set of OR-alternatives. A blank ScoringLabelID keys off
     # this row's own ConditionID instead, so it never groups with anything

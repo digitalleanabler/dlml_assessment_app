@@ -44,8 +44,8 @@ def default_privacy_notice_path() -> Path:
 def load_privacy_notice() -> tuple[str, str]:
     """Reads privacy_notice.md (sibling of app.py) and parses its
     '**Notice Version:** vX.Y' metadata line - the sole source of truth for the
-    notice text and its version (03-business-rules.md, "Privacy notice consent";
-    06-conventions.md, "Privacy notice version"). Read fresh every call rather than
+    notice text and its version (05-business-rules.md, "Privacy notice consent";
+    08-conventions.md, "Privacy notice version"). Read fresh every call rather than
     cached, so a version bump on disk is always picked up the next time the gate
     runs (i.e. on the next login - see "Not re-checked mid-session" below).
     Returns (version_string, full_notice_text); version_string is "" if the
@@ -63,7 +63,7 @@ def load_privacy_notice() -> tuple[str, str]:
 
 def notice_major_version(version: str) -> int | None:
     """Parse the integer major component before the first '.' in a vMAJOR.MINOR
-    privacy-notice version string, e.g. 'v1.2' -> 1 (05-glossary.md, 'Major version
+    privacy-notice version string, e.g. 'v1.2' -> 1 (07-glossary.md, 'Major version
     (notice)'). Only this component is ever compared when deciding whether a user
     must re-accept. Returns None if the string doesn't parse."""
     cleaned = str(version or "").strip()
@@ -349,7 +349,7 @@ class PageSession:
     # Distinct from `saved_snapshot`/`dirty_ids()` above, which compare against
     # the database globally and exist only to protect an in-progress edit on a
     # *different* page from a merge-reload triggered elsewhere (ADR-001). See
-    # 05-glossary.md, "Entry snapshot" vs "Dirty" vs "Page-dirty".
+    # 07-glossary.md, "Entry snapshot" vs "Dirty" vs "Page-dirty".
     entry_responses: dict[str, str] = field(default_factory=dict)
     entry_visibility: dict[str, bool] = field(default_factory=dict)
     entry_page_id: str | None = None
@@ -444,7 +444,7 @@ class PageSession:
         `is_page_dirty()` compares against. Deliberately *not* captured when the
         user chooses "Return to the current page" from the unsaved-changes
         warning - that path is a cancelled navigation, not a reload (see
-        03-business-rules.md)."""
+        05-business-rules.md)."""
         page_question_ids = {str(question["QuestionID"]) for question in page_questions if question.get("QuestionID")}
         self.entry_page_id = page_id
         self.entry_responses = {question_id: str(self.responses.get(question_id, "")) for question_id in page_question_ids}
@@ -476,7 +476,7 @@ class PageSession:
         keys so a later visit re-seeds from the restored value instead of a stale
         widget-held one. Writes nothing to the database: the entry snapshot is
         already known-good, previously loaded data, so resetting to it is a pure
-        in-memory operation (see 03-business-rules.md, "Leaving without
+        in-memory operation (see 05-business-rules.md, "Leaving without
         saving")."""
         for question in page_questions:
             question_id = str(question.get("QuestionID", "") or "").strip()
@@ -495,7 +495,7 @@ class PageSession:
         `saved_snapshot`. A user tracks what's on screen, not their click history;
         gating a save on dirtiness let a save silently omit a visible, non-blank
         answer with no indication to the user (see ADR-007's trace in
-        07-decisions.md). `saved_snapshot`/`dirty_ids()` are unaffected by this and
+        09-decisions.md). `saved_snapshot`/`dirty_ids()` are unaffected by this and
         remain in use for merge-reload staleness protection on *other* pages - this
         only changes what counts as "part of this save." The repository's own
         diff-against-current-database step (`save_responses()`) still limits what
@@ -549,7 +549,7 @@ def authenticate(repo: Any, company_id: str, email: str) -> tuple[Any | None, An
 
 
 def render_privacy_consent_gate(repo: Any, identity: dict[str, Any]) -> bool:
-    """Consent gate (04-requirements.md §9, 03-business-rules.md 'Privacy notice
+    """Consent gate (06-requirements.md §9, 05-business-rules.md 'Privacy notice
     consent', ADR-008). Depends only on the signed-in user's email - no dependency
     on `company` or survey design data. Returns True once the user has consented
     (just now, or in an earlier login already recorded in UserConsents); False
@@ -594,7 +594,7 @@ def render_privacy_consent_gate(repo: Any, identity: dict[str, Any]) -> bool:
         st.session_state["consent_confirmed"] = True
         st.rerun()
     elif decline_clicked:
-        # Decline (03-business-rules.md): log out immediately, no session retained,
+        # Decline (05-business-rules.md): log out immediately, no session retained,
         # no UserConsents row written. Does not block a future login attempt - the
         # same user signing in again will see the same dialog, since nothing was
         # recorded.
@@ -701,7 +701,7 @@ def get_page_readiness(
 
 
 def _sanitize_filename_component(text: str) -> str:
-    """06-conventions.md, "PDF export filename": every character that is not a
+    """08-conventions.md, "PDF export filename": every character that is not a
     letter, digit, or underscore becomes '_', leading/trailing '_' stripped. Used
     only for the PDF's internal title metadata - per ADR-009 (amended by ADR-021)
     the export is a button that opens a Blob via window.open(), not an anchor with
@@ -720,7 +720,7 @@ def _export_pdf_title(company_name: str, generated_at: datetime) -> str:
 def _draw_export_page_number(canvas_obj: Any, doc: SimpleDocTemplate) -> None:
     """Bottom-right 'Page N' footer, drawn once per page via SimpleDocTemplate's
     onFirstPage/onLaterPages hooks. No total-page-count is shown (e.g. no
-    'Page N of M') - see ADR-009's "Implemented" note in 07-decisions.md for why:
+    'Page N of M') - see ADR-009's "Implemented" note in 09-decisions.md for why:
     the total is only knowable after the whole story has finished flowing, which
     would require a two-pass numbered-canvas approach; this only needs the current
     page, which canvas.getPageNumber() already provides mid-flow."""
@@ -737,7 +737,7 @@ def build_export_pdf_bytes(
     design_data: dict[str, Any],
     page_session: "PageSession",
 ) -> bytes:
-    """PDF export (04-requirements.md §10; 03-business-rules.md, "PDF export of
+    """PDF export (06-requirements.md §10; 05-business-rules.md, "PDF export of
     assessment responses"). Reads only already-loaded `page_session.responses` /
     `page_session.visibility` - no DB read of its own, no rerun (ADR-009). Only
     questions currently visible (per the same in-memory, pure computation described
@@ -811,7 +811,7 @@ def build_export_pdf_bytes(
 
 
 def render_export_pdf_link(pdf_bytes: bytes) -> None:
-    """ADR-009 (see amendments in `07-decisions.md`): a single control that opens
+    """ADR-009 (see amendments in `09-decisions.md`): a single control that opens
     the PDF in a new tab - not `st.download_button`. Rendered via
     `st.html(..., unsafe_allow_javascript=True)`. Deliberately does NOT use an
     `onclick="..."` attribute on the button: Streamlit's HTML sanitizer strips
@@ -932,7 +932,7 @@ def main() -> None:
         company = refresh_company_state(repo, identity["CompanyID"])
     assert company
 
-    # Consent gate (04-requirements.md §9, ADR-008): must run before any survey
+    # Consent gate (06-requirements.md §9, ADR-008): must run before any survey
     # content is rendered, and depends only on identity["Email"] - not on `company`
     # or design data, which is why it's placed here rather than further down.
     if not render_privacy_consent_gate(repo, identity):
@@ -973,7 +973,7 @@ def main() -> None:
         st.session_state["active_page_id"] = current_page_id
         st.session_state["sidebar_page_selection"] = current_page_id
         # "Reload shared survey" is an explicit discard/refresh action (ADR-011,
-        # 03-business-rules.md) - exempt from the unsaved-changes warning, and it
+        # 05-business-rules.md) - exempt from the unsaved-changes warning, and it
         # supersedes any warning that might already be pending.
         st.session_state.pop("pending_nav_target", None)
         st.session_state.pop("pending_signout", None)
@@ -1153,7 +1153,7 @@ def main() -> None:
 
     # While the warning above is unresolved, the page actually rendered is the
     # one being left (`warning_page`) - the attempted target was never navigated
-    # to (see "Returning to the current page," 03-business-rules.md).
+    # to (see "Returning to the current page," 05-business-rules.md).
     display_page_id = warning_page["PageID"] if (pending_nav_target is not None or pending_signout) else selected_page_id
     selected_page = page_by_id[display_page_id]
 
@@ -1214,7 +1214,7 @@ def main() -> None:
         else:
             st.success("All required visible questions are answered.")
 
-        # PDF export (04-requirements.md §10, ADR-009): always available regardless
+        # PDF export (06-requirements.md §10, ADR-009): always available regardless
         # of readiness or readonly status; reads only the already-loaded
         # page_session state, so it needs no extra DB round trip and causes no
         # rerun of its own. Positioned directly above "Submit assessment".

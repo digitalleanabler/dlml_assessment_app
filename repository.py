@@ -27,7 +27,7 @@ STATIC_TABLES = {"Pages", "Questions", "QuestionOptions", "QuestionConditions", 
 # then branch to INSERT or UPDATE" pattern used throughout this module.
 UPSERT_KEY_TABLES = ("Responses", "QuestionVisibility")
 # UserConsents is deliberately NOT in UPSERT_KEY_TABLES / SEED-skipped-only-if-empty
-# logic the way Responses/ResponseHistory are - see 02-data-model.md: it has no
+# logic the way Responses/ResponseHistory are - see 04-data-model.md: it has no
 # unique key and is append-only by design (ADR-008), so it's always insert-only.
 # _initialize_schema() below creates every table as bare TEXT columns with no
 # PRIMARY KEY. The production seed and both live databases DO carry a primary key
@@ -50,7 +50,7 @@ SHEET_HEADERS = {
     "Stages": ["StageID", "StageName"],
     "Dimensions": ["DimensionID", "DimensionName"],
     # Was misspelled "EntitiyID" in code and both live databases; see
-    # ADR-016/ADR-017 in 07-decisions.md for the fix/migration history.
+    # ADR-016/ADR-017 in 09-decisions.md for the fix/migration history.
     "Entities": ["EntityID", "EntityName", "StageID"],
     "ScoringItems": ["EntityID", "DimensionID"],
     # "ScoringItem" here is a denormalized "{EntityID}-{DimensionID}" string that always
@@ -113,7 +113,7 @@ SEED: dict[str, list[dict[str, str]]] = {
     ],
     # 16-entity DLML model (matches methodology/doc/08-glossary.md and the
     # real production seed, data/e_db_template/DLML Assessment Questions
-    # (template).sqlite) - see ADR-029 in 07-decisions.md for the
+    # (template).sqlite) - see ADR-029 in 09-decisions.md for the
     # correction history (E05 renamed from "Solution Success Measure" to
     # "Solution"; old separate E13 "Trial Operation"/E14 "Full Operation"
     # merged into one E13 "Solution Operation"; E15-E17 renumbered down to
@@ -173,8 +173,8 @@ SEED: dict[str, list[dict[str, str]]] = {
     # up to Q119+ from the real ~134-question production survey), this is a minimal,
     # self-contained example tied to the demo survey's own Q002/Q003 - one unconditional
     # Total baseline + one single-term Received condition, the same E01-EX shape exercised
-    # by test/test_unit/test_scoring_engine.py. Left in place as reference data even
-    # though the live app no longer computes scores itself - see ADR-018 in 07-decisions.md
+    # by tests/test_unit/test_scoring_engine.py. Left in place as reference data even
+    # though the live app no longer computes scores itself - see ADR-018 in 09-decisions.md
     # (score computation/matrix generation moved to data/B02_create_matrix.py).
     "ScoringConditions": [
         # Different labels (a conditional Received event, an unconditional
@@ -547,7 +547,7 @@ class SQLiteRepository:
     def consents_for(self, email: str) -> list[dict[str, str]]:
         """Scoped, case-insensitive read of this email's UserConsents rows (mirrors
         the case-insensitive Email match used in user()). Used by the consent gate
-        (03-business-rules.md, 'Privacy notice consent') to decide whether the
+        (05-business-rules.md, 'Privacy notice consent') to decide whether the
         signed-in user has already accepted the current major notice version."""
         target = str(email or "").strip().lower()
         if not target:
@@ -565,7 +565,7 @@ class SQLiteRepository:
     def record_consent(self, email: str, notice_version: str) -> None:
         """Append-only insert of one UserConsents row (ADR-008) - never an upsert,
         never keyed as (Email)-unique. An earlier row for an older major version is
-        left in place as a historical record; see 02-data-model.md."""
+        left in place as a historical record; see 04-data-model.md."""
         cleaned_email = str(email or "").strip()
         cleaned_version = str(notice_version or "").strip()
         if not cleaned_email or not cleaned_version:
@@ -651,8 +651,8 @@ class SQLiteRepository:
             debug(f"Batched upsert of {len(response_rows)} response(s) for company '{company_id}'.")
 
             # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
-            # write turned off for observation - see doc/08-status-and-open-questions.md
-            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # write turned off for observation - see doc/10-open-items.md
+            # [i04]. Not a final decision; uncomment this block to restore the write.
             # if visibility_diff:
             #     visibility_rows = [(company_id, question_id, value) for question_id, value in visibility_diff.items()]
             #     _multi_row_upsert(
@@ -728,7 +728,7 @@ class SQLiteRepository:
         """LEGACY / NOT CALLED BY app.py. Kept for interface parity only. Visibility
         is computed purely in memory during rendering/readiness checks
         (PageSession.recompute_visibility in app.py; see ADR-001 in
-        07-decisions.md) and QuestionVisibility is written as a batched diff inside
+        09-decisions.md) and QuestionVisibility is written as a batched diff inside
         save_responses(). This method still round-trips through
         _ensure_company_runtime_rows() per question and also calls the broad
         self.clear_cache() (wiping static/session tiers too), so calling it from any
@@ -787,8 +787,8 @@ class SQLiteRepository:
 
         with self._connect() as conn:
             # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
-            # write turned off for observation - see doc/08-status-and-open-questions.md
-            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # write turned off for observation - see doc/10-open-items.md
+            # [i04]. Not a final decision; uncomment this block to restore the write.
             # for chunk in _chunked(visibility_rows):
             #     _multi_row_upsert(
             #         conn, "QuestionVisibility",
@@ -869,8 +869,8 @@ class SQLiteRepository:
 
         with self._connect() as conn:
             # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
-            # write turned off for observation - see doc/08-status-and-open-questions.md
-            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # write turned off for observation - see doc/10-open-items.md
+            # [i04]. Not a final decision; uncomment this block to restore the write.
             # for chunk in _chunked(visibility_rows):
             #     _multi_row_upsert(
             #         conn, "QuestionVisibility",
@@ -1238,8 +1238,8 @@ class TursoRepository(SQLiteRepository):
         debug(f"Batched upsert of {len(response_rows)} response(s) for company '{company_id}'.")
 
         # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
-        # write turned off for observation - see doc/08-status-and-open-questions.md
-        # [g04]. Not a final decision; uncomment this block to restore the write.
+        # write turned off for observation - see doc/10-open-items.md
+        # [i04]. Not a final decision; uncomment this block to restore the write.
         # if visibility_diff:
         #     visibility_rows = [(company_id, question_id, value) for question_id, value in visibility_diff.items()]
         #     _multi_row_upsert(
@@ -1317,7 +1317,7 @@ class TursoRepository(SQLiteRepository):
         """LEGACY / NOT CALLED BY app.py. Kept for interface parity only. Visibility
         is computed purely in memory during rendering/readiness checks
         (PageSession.recompute_visibility in app.py; see ADR-001 in
-        07-decisions.md) and QuestionVisibility is written as a batched diff inside
+        09-decisions.md) and QuestionVisibility is written as a batched diff inside
         save_responses(). This method still round-trips through
         _ensure_company_runtime_rows() per question (each one a network round trip
         on Turso) and also calls the broad self.clear_cache() (wiping static/session
@@ -1383,8 +1383,8 @@ class TursoRepository(SQLiteRepository):
                     response_seed_rows.append((company_id, question_id, "", "", ""))
 
         # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
-        # write turned off for observation - see doc/08-status-and-open-questions.md
-        # [g04]. Not a final decision; uncomment this block to restore the write.
+        # write turned off for observation - see doc/10-open-items.md
+        # [i04]. Not a final decision; uncomment this block to restore the write.
         # for chunk in _chunked(visibility_rows):
         #     _multi_row_upsert(
         #         conn, "QuestionVisibility",
@@ -1447,8 +1447,8 @@ class TursoRepository(SQLiteRepository):
 
         conn = self._connect()
         # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
-        # write turned off for observation - see doc/08-status-and-open-questions.md
-        # [g04]. Not a final decision; uncomment this block to restore the write.
+        # write turned off for observation - see doc/10-open-items.md
+        # [i04]. Not a final decision; uncomment this block to restore the write.
         # for chunk in _chunked(visibility_rows):
         #     _multi_row_upsert(
         #         conn, "QuestionVisibility",
@@ -1538,8 +1538,8 @@ class InMemoryRepository:
             visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
             visible_value = "TRUE" if visible else "FALSE"
             # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
-            # write turned off for observation - see doc/08-status-and-open-questions.md
-            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # write turned off for observation - see doc/10-open-items.md
+            # [i04]. Not a final decision; uncomment this block to restore the write.
             # existing = next((row for row in self.tables["QuestionVisibility"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
             # if existing is None:
             #     self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": visible_value})
@@ -1581,8 +1581,8 @@ class InMemoryRepository:
             visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
             visible_value = "TRUE" if visible else "FALSE"
             # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
-            # write turned off for observation - see doc/08-status-and-open-questions.md
-            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # write turned off for observation - see doc/10-open-items.md
+            # [i04]. Not a final decision; uncomment this block to restore the write.
             # existing = next((row for row in self.tables["QuestionVisibility"] if row.get("CompanyID") == company_id and row.get("QuestionID") == question_id), None)
             # if existing is None:
             #     self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": visible_value})
@@ -1747,8 +1747,8 @@ class InMemoryRepository:
             visible = is_question_visible(question, conditions_by_question.get(question_id, []), current_responses)
             self._ensure_company_runtime_rows(company_id, questions=[question], responses=current_responses)
             # EXPERIMENT-DISABLED-VISIBILITY-WRITE (2026-07-28): QuestionVisibility
-            # write turned off for observation - see doc/08-status-and-open-questions.md
-            # [g04]. Not a final decision; uncomment this block to restore the write.
+            # write turned off for observation - see doc/10-open-items.md
+            # [i04]. Not a final decision; uncomment this block to restore the write.
             # self.tables["QuestionVisibility"] = [row for row in self.tables["QuestionVisibility"] if not (row.get("CompanyID") == company_id and row.get("QuestionID") == question_id)]
             # self.tables["QuestionVisibility"].append({"CompanyID": company_id, "QuestionID": question_id, "Visible": "TRUE" if visible else "FALSE"})
 
